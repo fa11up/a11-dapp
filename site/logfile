@@ -1,0 +1,30 @@
+2025-12-13 20:46:06.767 EST [17981] LOG:  starting PostgreSQL 14.8 (Homebrew) on x86_64-apple-darwin22.4.0, compiled by Apple clang version 14.0.3 (clang-1403.0.22.14.1), 64-bit
+2025-12-13 20:46:06.768 EST [17981] LOG:  listening on IPv6 address "::1", port 5432
+2025-12-13 20:46:06.768 EST [17981] LOG:  listening on IPv4 address "127.0.0.1", port 5432
+2025-12-13 20:46:06.769 EST [17981] LOG:  listening on Unix socket "/tmp/.s.PGSQL.5432"
+2025-12-13 20:46:06.774 EST [17982] LOG:  database system was shut down at 2025-12-13 20:45:10 EST
+2025-12-13 20:46:06.784 EST [17981] LOG:  database system is ready to accept connections
+2025-12-13 20:47:19.534 EST [18058] ERROR:  role "azp" already exists
+2025-12-13 20:47:19.534 EST [18058] STATEMENT:  CREATE USER azp WITH ENCRYPTED PASSWORD 'poop5';
+2025-12-13 23:14:04.059 EST [49800] FATAL:  role "postgres" does not exist
+2025-12-13 23:19:03.270 EST [50837] FATAL:  role "postgres" does not exist
+2025-12-13 23:20:42.954 EST [51208] FATAL:  role "postgres" does not exist
+2025-12-13 23:23:03.846 EST [51562] FATAL:  role "postgres" does not exist
+2025-12-13 23:24:08.621 EST [51839] FATAL:  role "postgres" does not exist
+2025-12-13 23:26:32.482 EST [52223] FATAL:  role "postgres" does not exist
+2025-12-13 23:27:39.879 EST [52464] FATAL:  database "azp" does not exist
+2025-12-13 23:29:07.323 EST [52857] FATAL:  role "postgres" does not exist
+2025-12-13 23:29:56.232 EST [53069] FATAL:  role "postgres" does not exist
+2025-12-13 23:30:09.145 EST [53202] FATAL:  role "postgres" does not exist
+2025-12-13 23:31:38.324 EST [53529] FATAL:  role "postgres" does not exist
+2025-12-13 23:32:23.331 EST [53723] FATAL:  database "azp" does not exist
+2025-12-13 23:34:46.520 EST [54334] FATAL:  role "postgres" does not exist
+2025-12-13 23:36:39.062 EST [54665] FATAL:  role "postgres" does not exist
+2025-12-13 23:40:22.353 EST [55374] FATAL:  role "postgres" does not exist
+2025-12-13 23:41:54.106 EST [55618] FATAL:  role "postgres" does not exist
+2025-12-13 23:44:57.343 EST [56148] FATAL:  role "postgres" does not exist
+2025-12-13 23:45:36.620 EST [56340] FATAL:  role "postgres" does not exist
+2025-12-13 23:46:42.778 EST [56542] FATAL:  role "postgres" does not exist
+2025-12-13 23:51:32.497 EST [57450] FATAL:  role "postgres" does not exist
+2025-12-13 23:54:36.859 EST [57947] FATAL:  role "postgres" does not exist
+2025-12-13 23:56:45.873 EST [58281] FATAL:  role "postgres" does not exist
