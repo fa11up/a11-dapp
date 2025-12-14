@@ -1,13 +1,11 @@
 name = "a11-dapp"
-main = "worker.ts"
+# main = "worker.ts"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = "./dist"
 
-[site]
-bucket = "./dist"
+# [site]
+# bucket = "./dist"
 
 [vars]
 ENVIRONMENT = "production"
-
-[env.dev]
-vars = { ENVIRONMENT = "development" }

@@ -5,7 +5,9 @@ import {
   coinbaseWallet,
   walletConnect,
   embeddedWallet,
+  ConnectWallet,
 } from "@thirdweb-dev/react";
+
 import LoginPage from './components/LoginPage';
 import Dashboard from './components/Dashboard';
 

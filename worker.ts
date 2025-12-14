@@ -1,12 +1,10 @@
 import { Pool } from 'pg';
-import manifestJSON from '__STATIC_CONTENT_MANIFEST';
+import { getAssetFromKV } from '@cloudflare/kv-asset-handler';
 
 interface Env {
   DATABASE_URL: string;
   __STATIC_CONTENT: any;
 }
-
-const assetManifest = JSON.parse(manifestJSON);
 
 let pool: Pool | null = null;
 
@@ -20,47 +18,29 @@ function getPool(env: Env) {
   return pool;
 }
 
-async function handleAsset(request: Request, env: Env) {
-  const url = new URL(request.url);
-  let path = url.pathname;
-  
-  // Serve index.html for root and SPA routes
-  if (path === '/' || !path.includes('.')) {
-    path = '/index.html';
-  }
-  
-  try {
-    // @ts-ignore
-    return await env.__STATIC_CONTENT.get(path);
-  } catch {
-    // @ts-ignore
-    return await env.__STATIC_CONTENT.get('/index.html');
-  }
-}
-
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;
 
-    // Handle API routes
-    if (path.startsWith('/api/')) {
-      const corsHeaders = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      };
+    const corsHeaders = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    };
 
-      if (method === 'OPTIONS') {
-        return new Response(null, { headers: corsHeaders });
-      }
+    if (method === 'OPTIONS') {
+      return new Response(null, { headers: corsHeaders });
+    }
 
-      const pool = getPool(env);
+    try {
+      // API routes
+      if (path.startsWith('/api/')) {
+        const pool = getPool(env);
 
-      try {
         if (path === '/api/health') {
-          return new Response(JSON.stringify({ status: 'ok', message: 'Server is running' }), {
+          return new Response(JSON.stringify({ status: 'ok' }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
@@ -69,26 +49,24 @@ export default {
           const address = path.split('/').pop()!.toLowerCase();
           const result = await pool.query('SELECT * FROM users WHERE wallet_address = $1', [address]);
           
-          if (result.rows.length === 0) {
-            return new Response(JSON.stringify({ error: 'User not found' }), {
-              status: 404,
+          return new Response(
+            JSON.stringify(result.rows.length ? result.rows[0] : { error: 'User not found' }),
+            { 
+              status: result.rows.length ? 200 : 404,
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            });
-          }
-          
-          return new Response(JSON.stringify(result.rows[0]), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
+            }
+          );
         }
 
         if (path === '/api/user/signup' && method === 'POST') {
-          const { walletAddress, email, displayName, authMethod, profileImage } = await request.json();
+          const body = await request.json() as any;
+          const { walletAddress, email, displayName, authMethod, profileImage } = body;
           
           if (!walletAddress || !authMethod) {
-            return new Response(JSON.stringify({ error: 'Wallet address and auth method are required' }), {
-              status: 400,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            });
+            return new Response(
+              JSON.stringify({ error: 'Wallet address and auth method are required' }),
+              { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
           }
 
           const existingUser = await pool.query(
@@ -97,10 +75,10 @@ export default {
           );
 
           if (existingUser.rows.length > 0) {
-            return new Response(JSON.stringify({ error: 'User already exists', user: existingUser.rows[0] }), {
-              status: 409,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            });
+            return new Response(
+              JSON.stringify({ error: 'User already exists', user: existingUser.rows[0] }),
+              { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
           }
 
           const result = await pool.query(
@@ -109,54 +87,86 @@ export default {
             [walletAddress.toLowerCase(), email?.toLowerCase(), displayName || 'Web3 User', authMethod, profileImage]
           );
 
-          return new Response(JSON.stringify({ message: 'User created successfully', user: result.rows[0] }), {
-            status: 201,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
+          return new Response(
+            JSON.stringify({ message: 'User created successfully', user: result.rows[0] }),
+            { status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
         }
 
         if (path.match(/^\/api\/user\/0x[a-fA-F0-9]{40}\/name$/) && method === 'PATCH') {
           const address = path.split('/')[3].toLowerCase();
-          const { displayName } = await request.json();
+          const body = await request.json() as any;
           
           const result = await pool.query(
             `UPDATE users SET display_name = $1, updated_at = NOW() WHERE wallet_address = $2 RETURNING *`,
-            [displayName, address]
+            [body.displayName, address]
           );
 
-          if (result.rows.length === 0) {
-            return new Response(JSON.stringify({ error: 'User not found' }), {
-              status: 404,
+          return new Response(
+            JSON.stringify(result.rows.length ? result.rows[0] : { error: 'User not found' }),
+            { 
+              status: result.rows.length ? 200 : 404,
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            });
-          }
-
-          return new Response(JSON.stringify(result.rows[0]), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
+            }
+          );
         }
 
         if (path === '/api/users' && method === 'GET') {
           const result = await pool.query(
             'SELECT wallet_address, email, display_name, auth_method, created_at FROM users ORDER BY created_at DESC'
           );
+          
           return new Response(JSON.stringify(result.rows), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
-        return new Response('Not Found', { status: 404, headers: corsHeaders });
-
-      } catch (error) {
-        console.error('Error:', error);
-        return new Response(JSON.stringify({ error: 'Internal server error' }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+        return new Response(
+          JSON.stringify({ error: 'Not found' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
-    }
 
-    // Serve static files for non-API routes
-    return handleAsset(request, env);
+      // Serve static files using getAssetFromKV
+      try {
+        return await getAssetFromKV(
+          {
+            request,
+            waitUntil: ctx.waitUntil.bind(ctx),
+          },
+          {
+            ASSET_NAMESPACE: env.__STATIC_CONTENT,
+            ASSET_MANIFEST: {},
+          }
+        );
+      } catch (e) {
+        // SPA fallback - serve index.html for 404s
+        try {
+          const notFoundResponse = await getAssetFromKV(
+            {
+              request: new Request(`${url.origin}/index.html`, request),
+              waitUntil: ctx.waitUntil.bind(ctx),
+            },
+            {
+              ASSET_NAMESPACE: env.__STATIC_CONTENT,
+              ASSET_MANIFEST: {},
+            }
+          );
+          return new Response(notFoundResponse.body, {
+            ...notFoundResponse,
+            status: 200,
+          });
+        } catch (e) {
+          return new Response('Not found', { status: 404 });
+        }
+      }
+
+    } catch (error) {
+      console.error('Worker error:', error);
+      return new Response(
+        JSON.stringify({ error: 'Internal server error', message: String(error) }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
   }
 };
