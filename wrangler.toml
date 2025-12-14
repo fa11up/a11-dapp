@@ -1,7 +1,10 @@
-name = "a11-dapp"
-main = "wrangler.ts"
+name = "web3-login-app"
+main = "worker.ts"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
+
+[site]
+bucket = "./dist"
 
 [vars]
 ENVIRONMENT = "production"
