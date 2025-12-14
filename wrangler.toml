@@ -1,15 +1,10 @@
 name = "a11-dapp"
 main = "wrangler.ts"
 compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
 
 [vars]
 ENVIRONMENT = "production"
 
-# Uncomment and configure if using KV, D1, or other bindings
-# [[kv_namespaces]]
-# binding = "MY_KV"
-# id = "your-kv-id"
-
-# For local development
 [env.dev]
 vars = { ENVIRONMENT = "development" }
