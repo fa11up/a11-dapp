@@ -1,0 +1,8 @@
+2025-12-13 20:46:06.767 EST [17981] LOG:  starting PostgreSQL 14.8 (Homebrew) on x86_64-apple-darwin22.4.0, compiled by Apple clang version 14.0.3 (clang-1403.0.22.14.1), 64-bit
+2025-12-13 20:46:06.768 EST [17981] LOG:  listening on IPv6 address "::1", port 5432
+2025-12-13 20:46:06.768 EST [17981] LOG:  listening on IPv4 address "127.0.0.1", port 5432
+2025-12-13 20:46:06.769 EST [17981] LOG:  listening on Unix socket "/tmp/.s.PGSQL.5432"
+2025-12-13 20:46:06.774 EST [17982] LOG:  database system was shut down at 2025-12-13 20:45:10 EST
+2025-12-13 20:46:06.784 EST [17981] LOG:  database system is ready to accept connections
+2025-12-13 20:47:19.534 EST [18058] ERROR:  role "azp" already exists
+2025-12-13 20:47:19.534 EST [18058] STATEMENT:  CREATE USER azp WITH ENCRYPTED PASSWORD 'poop5';
