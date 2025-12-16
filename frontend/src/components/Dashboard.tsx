@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useActiveAccount, useDisconnect, useWalletBalance } from "thirdweb/react";
+import { useActiveAccount, useDisconnect, useWalletBalance,useActiveWallet } from "thirdweb/react";
 import { LogOut, Wallet, TrendingUp, Activity, Settings, User, Copy, Check } from 'lucide-react';
 import { ethereum } from "thirdweb/chains";
 import type { ThirdwebClient } from "thirdweb";
@@ -8,12 +8,14 @@ interface DashboardProps {
   client?: ThirdwebClient;
 }
 
-const Dashboard: React.FC<DashboardProps> = () => {
+const Dashboard: React.FC<DashboardProps> = ({ client }) => {
   const account = useActiveAccount();
+  const wallet = useActiveWallet();
   const { disconnect } = useDisconnect();
   const { data: balance } = useWalletBalance({
     chain: ethereum,
     address: account?.address,
+    client: client as ThirdwebClient,
   });
   
   const [userName, setUserName] = useState<string>('');
@@ -52,7 +54,9 @@ const Dashboard: React.FC<DashboardProps> = () => {
   };
 
   const handleDisconnect = () => {
-    disconnect();
+    if (wallet) {
+      disconnect(wallet);
+    }
   };
 
   return (

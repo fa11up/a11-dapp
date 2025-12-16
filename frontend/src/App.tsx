@@ -1,6 +1,5 @@
 import { 
-  ThirdwebProvider, 
-  ConnectButton,
+  ThirdwebProvider,
   useActiveAccount,
   useActiveWalletConnectionStatus,
 } from "thirdweb/react";
@@ -25,19 +24,6 @@ const wallets = [
         "google",
         "facebook",
         "phone",
-        "metamask",
-        "walletconnect",
-        "coinbase",
-        "trustwallet",
-        "zerion",
-        "lattice",
-        "bitget",
-        "safe",
-        "gnosis",
-        "argent",
-        "portis",
-        "fortmatic",
-        "portkey",
         "passkey",
       ],
     },
@@ -106,7 +92,7 @@ function AppContent() {
     }
   }, [account?.address, connectionStatus]);
 
-  return account ? <Dashboard /> : <LoginPage client={client} wallets={wallets} />;
+  return account ? <Dashboard client={client} /> : <LoginPage client={client} wallets={wallets} />;
 }
 
 function App() {
