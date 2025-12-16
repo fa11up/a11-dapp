@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useActiveAccount, useDisconnect, useWalletBalance,useActiveWallet } from "thirdweb/react";
+import { useActiveAccount, useDisconnect, useWalletBalance, useActiveWallet, Blobbie } from "thirdweb/react";
 import { LogOut, Wallet, TrendingUp, Activity, Settings, User, Copy, Check } from 'lucide-react';
 import { ethereum } from "thirdweb/chains";
 import type { ThirdwebClient } from "thirdweb";
@@ -67,9 +67,7 @@ const Dashboard: React.FC<DashboardProps> = ({ client }) => {
         <div className="bg-white/10 backdrop-blur-lg rounded-2xl shadow-2xl border border-white/20 p-6 mb-6">
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-blue-500 rounded-full flex items-center justify-center">
-                <User className="w-8 h-8 text-white" />
-              </div>
+              <Blobbie address={account?.address || ''} size={64} />
               <div>
                 {isEditingName ? (
                   <div className="flex items-center gap-2">

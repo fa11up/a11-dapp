@@ -1,6 +1,5 @@
 /**
- * Cloudflare Worker for D1 Database API
- * This replaces the Express server for Cloudflare deployment
+ * Cloudflare Worker for D1 Database API - Simplified
  */
 
 export interface Env {
@@ -8,9 +7,8 @@ export interface Env {
   ALLOWED_ORIGINS?: string;
 }
 
-// CORS headers helper
 function corsHeaders(origin: string | null) {
-  const allowedOrigins = ['https://a11.fund', 'https://api.a11.fund', 'https://a11-dapp.pages.dev','http://localhost:5173', 'http://localhost:3000'];
+  const allowedOrigins = ['https://a11.fund', 'https://apia11.fund', 'http://localhost:5173', 'http://localhost:3000'];
   const requestOrigin = origin || '';
   
   return {
@@ -29,12 +27,10 @@ export default {
       ...corsHeaders(origin),
     };
 
-    // Handle CORS preflight
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers });
     }
 
-    // Check if database binding exists
     if (!env.DB) {
       console.error('D1 database binding not found. Check wrangler.toml configuration.');
       return new Response(
@@ -90,24 +86,10 @@ export default {
         );
       }
 
-      // Create new user (Sign Up) - supports both /api/signup and /api/user/signup
+      // Create new user (Sign Up)
       if ((url.pathname === '/api/user/signup' || url.pathname === '/api/signup') && request.method === 'POST') {
         const body = await request.json() as any;
-        const { 
-          walletAddress, 
-          email, 
-          phoneNumber,
-          displayName, 
-          authMethod, 
-          profileImage,
-          googleId,
-          coinbaseId,
-          facebookId,
-          xId,
-          githubId,
-          twitchId,
-          discordId
-        } = body;
+        const { walletAddress, email, phoneNumber, displayName, authMethod, profileImage } = body;
 
         if (!walletAddress || !authMethod) {
           return new Response(
@@ -128,43 +110,17 @@ export default {
           );
         }
 
-        // Explicitly set undefined/null/empty values to null for D1
         const emailValue = (email && email !== '') ? email.toLowerCase() : null;
         const phoneValue = (phoneNumber && phoneNumber !== '') ? phoneNumber : null;
         const displayNameValue = (displayName && displayName !== '') ? displayName : 'Web3 User';
         const profileImageValue = (profileImage && profileImage !== '') ? profileImage : null;
-        const googleIdValue = (googleId && googleId !== '') ? googleId : null;
-        const coinbaseIdValue = (coinbaseId && coinbaseId !== '') ? coinbaseId : null;
-        const facebookIdValue = (facebookId && facebookId !== '') ? facebookId : null;
-        const xIdValue = (xId && xId !== '') ? xId : null;
-        const githubIdValue = (githubId && githubId !== '') ? githubId : null;
-        const twitchIdValue = (twitchId && twitchId !== '') ? twitchId : null;
-        const discordIdValue = (discordId && discordId !== '') ? discordId : null;
 
-        console.log('Signup values:', {
-          walletAddress: walletAddress.toLowerCase(),
-          emailValue,
-          phoneValue,
-          displayNameValue,
-          authMethod,
-          profileImageValue,
-          googleIdValue,
-          coinbaseIdValue,
-          facebookIdValue,
-          xIdValue,
-          githubIdValue,
-          twitchIdValue,
-          discordIdValue
-        });
-
-        // Create new user
         const result = await env.DB.prepare(
           `INSERT INTO users (
             wallet_address, email, phone_number, display_name, auth_method, profile_image,
-            google_id, coinbase_id, facebook_id, x_id, github_id, twitch_id, discord_id,
             last_login_at, login_count, created_at, updated_at
           )
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), 1, datetime('now'), datetime('now'))
+           VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 1, datetime('now'), datetime('now'))
            RETURNING *`
         ).bind(
           walletAddress.toLowerCase(),
@@ -172,14 +128,7 @@ export default {
           phoneValue,
           displayNameValue,
           authMethod,
-          profileImageValue,
-          googleIdValue,
-          coinbaseIdValue,
-          facebookIdValue,
-          xIdValue,
-          githubIdValue,
-          twitchIdValue,
-          discordIdValue
+          profileImageValue
         ).first();
 
         return new Response(
@@ -200,7 +149,6 @@ export default {
           );
         }
 
-        // Build update query dynamically
         const updates = ['last_login_at = datetime(\'now\')', 'login_count = login_count + 1'];
         const values = [];
 
@@ -245,17 +193,15 @@ export default {
         );
       }
 
-      // Create or update user (Sign In)
+      // Create or update user
       if (url.pathname === '/api/user' && request.method === 'POST') {
         const body = await request.json() as any;
         const { walletAddress, email, displayName, authMethod, profileImage } = body;
 
-        // First try to get existing user
         const existingUser = await env.DB.prepare(
           'SELECT * FROM users WHERE wallet_address = ?'
         ).bind(walletAddress.toLowerCase()).first();
 
-        // Explicitly set undefined/null/empty values to null for D1
         const emailValue = (email && email !== '') ? email.toLowerCase() : null;
         const displayNameValue = (displayName && displayName !== '') ? displayName : null;
         const authMethodValue = (authMethod && authMethod !== '') ? authMethod : null;
@@ -263,7 +209,6 @@ export default {
 
         let result;
         if (existingUser) {
-          // Update existing user - only update non-null values
           result = await env.DB.prepare(
             `UPDATE users SET 
               email = COALESCE(?, email),
@@ -281,7 +226,6 @@ export default {
             walletAddress.toLowerCase()
           ).first();
         } else {
-          // Insert new user
           result = await env.DB.prepare(
             `INSERT INTO users (wallet_address, email, display_name, auth_method, profile_image, last_login_at, login_count, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, datetime('now'), 1, datetime('now'), datetime('now'))
@@ -329,7 +273,6 @@ export default {
         const updates = [];
         const values = [];
 
-        // Explicitly handle undefined/null/empty values
         if (email !== undefined) {
           updates.push('email = ?');
           values.push((email && email !== '') ? email.toLowerCase() : null);
@@ -397,7 +340,6 @@ export default {
         );
       }
 
-      // Route not found
       return new Response(
         JSON.stringify({ error: 'Not found' }),
         { status: 404, headers }

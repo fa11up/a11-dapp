@@ -1,30 +1,30 @@
 import { 
   ThirdwebProvider,
   useActiveAccount,
+  useActiveWallet,
   useActiveWalletConnectionStatus,
 } from "thirdweb/react";
 import { createThirdwebClient } from "thirdweb";
 import { inAppWallet, createWallet } from "thirdweb/wallets";
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 import LoginPage from './components/LoginPage';
 import Dashboard from './components/Dashboard';
 
-// Create thirdweb client
 const client = createThirdwebClient({
   clientId: import.meta.env.VITE_THIRDWEB_CLIENT_ID,
 });
 
-// Configure in-app wallet with email and social login options
 const wallets = [
   inAppWallet({
     auth: {
       options: [
+        "guest",
         "email",
         "google",
+        "x",
         "coinbase",
         "facebook",
-        "x",
         "github",
         "twitch",
         "discord",
@@ -38,176 +38,121 @@ const wallets = [
   createWallet("walletConnect"),
 ];
 
-// Remove trailing slash from API_URL to prevent double slashes
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3001').replace(/\/$/, '');
 
 function AppContent() {
   const account = useActiveAccount();
+  const wallet = useActiveWallet();
   const connectionStatus = useActiveWalletConnectionStatus();
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [lastProcessedAddress, setLastProcessedAddress] = useState<string | null>(null);
 
   useEffect(() => {
-    const registerUser = async () => {
-      if (!account?.address) return;
+    const handleUserAuthentication = async () => {
+      if (connectionStatus !== 'connected' || !wallet || !account?.address) {
+        return;
+      }
 
+      if (isProcessing || lastProcessedAddress === account.address) {
+        return;
+      }
+
+      setIsProcessing(true);
+      
       try {
-        console.log('Registering user with address:', account.address);
-        console.log('Account details:', account);
-        
-        // Try to extract user info from the account
-        // ThirdWeb stores authentication details in the account object
-        let authMethod = 'wallet'; // default
-        let email = null;
-        let phoneNumber = null;
-        let displayName = 'Web3 User';
-        let profileImage = null;
-        let socialId = null;
+        console.log('🔐 User connected with address:', account.address);
+        console.log('👛 Wallet ID:', wallet.id);
 
-        // Check if this is an in-app wallet with social/email login
-        // The account object may contain details about how the user authenticated
-        if (account && 'details' in account) {
-          const details = (account as any).details;
-          console.log('Account details object:', details);
-          
-          // Try to extract authentication method
-          if (details?.authMethod) {
-            authMethod = details.authMethod;
-          } else if (details?.type) {
-            authMethod = details.type;
-          }
-          
-          // Extract email if available
-          if (details?.email) {
-            email = details.email;
-            if (authMethod === 'wallet') authMethod = 'email';
-          }
-          
-          // Extract phone if available
-          if (details?.phoneNumber || details?.phone) {
-            phoneNumber = details.phoneNumber || details.phone;
-            if (authMethod === 'wallet') authMethod = 'phone';
-          }
-          
-          // Extract display name if available
-          if (details?.name || details?.displayName) {
-            displayName = details.name || details.displayName;
-          }
-          
-          // Extract profile image if available
-          if (details?.profilePicture || details?.picture || details?.avatar) {
-            profileImage = details.profilePicture || details.picture || details.avatar;
-          }
-          
-          // Extract social IDs
-          if (details?.sub || details?.id) {
-            socialId = details.sub || details.id;
-          }
+        // Detect auth method based on wallet ID
+        let authMethod = 'wallet';
+        if (wallet.id === 'inApp' || wallet.id === 'embedded') {
+          authMethod = 'inApp'; // User used email/social/phone but we can't tell which
+        } else if (wallet.id === 'io.metamask') {
+          authMethod = 'metamask';
+        } else if (wallet.id === 'com.coinbase.wallet') {
+          authMethod = 'coinbase-wallet';
+        } else if (wallet.id === 'walletConnect') {
+          authMethod = 'walletconnect';
         }
 
-        console.log('Extracted user info:', {
-          authMethod,
-          email,
-          phoneNumber,
-          displayName,
-          profileImage,
-          socialId
-        });
-        
-        // First check if user exists
+        console.log('📊 Detected auth method:', authMethod);
+
+        // Check if user exists
         const checkResponse = await fetch(`${API_URL}/api/user/${account.address}`);
         
         if (checkResponse.status === 404) {
-          // User doesn't exist, create new user
-          console.log('User not found, creating new user...');
+          // NEW USER - SIGNUP
+          console.log('✨ NEW USER - Creating account');
           
-          const userData: any = {
+          const signupData = {
             walletAddress: account.address,
             authMethod: authMethod,
-            displayName: displayName,
-            email: email || null,
-            phoneNumber: phoneNumber || null,
-            profileImage: profileImage || null,
+            displayName: 'family member',
+            email: null,
+            phoneNumber: null,
+            profileImage: null,
           };
 
-          // Add social ID based on auth method
-          if (socialId) {
-            switch (authMethod) {
-              case 'google':
-                userData.googleId = socialId;
-                break;
-              case 'coinbase':
-                userData.coinbaseId = socialId;
-                break;
-              case 'facebook':
-                userData.facebookId = socialId;
-                break;
-              case 'x':
-                userData.xId = socialId;
-                break;
-              case 'github':
-                userData.githubId = socialId;
-                break;
-              case 'twitch':
-                userData.twitchId = socialId;
-                break;
-              case 'discord':
-                userData.discordId = socialId;
-                break;
-            }
-          }
+          console.log('📤 Signup data:', signupData);
 
-          console.log('Sending user data:', userData);
-
-          const response = await fetch(`${API_URL}/api/user/signup`, {
+          const signupResponse = await fetch(`${API_URL}/api/user/signup`, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(userData),
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(signupData),
           });
 
-          if (response.ok) {
-            const data = await response.json();
-            console.log('User created successfully:', data);
-          } else if (response.status === 409) {
-            // User already exists, this is fine
-            console.log('User already exists');
+          if (signupResponse.ok) {
+            const data = await signupResponse.json();
+            console.log('✅ User created:', data);
+          } else if (signupResponse.status === 409) {
+            console.log('ℹ️ User already exists (race condition)');
           } else {
-            const error = await response.json();
-            console.error('Failed to create user:', error);
+            const error = await signupResponse.json();
+            console.error('❌ Signup failed:', error);
           }
         } else if (checkResponse.ok) {
-          // User exists, update last login
-          console.log('User already exists in database, updating login info...');
+          // EXISTING USER - LOGIN
+          console.log('👋 EXISTING USER - Updating login');
           
-          const updateData: any = {
+          const loginData = {
             walletAddress: account.address,
             authMethod: authMethod,
-            lastLogin: true, // Flag to update last_login_at
           };
 
-          // Only update fields that have values
-          if (email) updateData.email = email;
-          if (phoneNumber) updateData.phoneNumber = phoneNumber;
-          if (displayName && displayName !== 'Web3 User') updateData.displayName = displayName;
-          if (profileImage) updateData.profileImage = profileImage;
+          console.log('📤 Login data:', loginData);
 
-          await fetch(`${API_URL}/api/user/login`, {
+          const loginResponse = await fetch(`${API_URL}/api/user/login`, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(updateData),
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(loginData),
           });
+
+          if (loginResponse.ok) {
+            const data = await loginResponse.json();
+            console.log('✅ Login tracked:', data);
+          } else {
+            const error = await loginResponse.json();
+            console.error('❌ Login update failed:', error);
+          }
         }
+
+        setLastProcessedAddress(account.address);
       } catch (error) {
-        console.error('Error registering user:', error);
+        console.error('💥 Authentication error:', error);
+      } finally {
+        setIsProcessing(false);
       }
     };
 
-    if (connectionStatus === 'connected' && account?.address) {
-      registerUser();
+    handleUserAuthentication();
+  }, [connectionStatus, wallet, account?.address, isProcessing, lastProcessedAddress]);
+
+  useEffect(() => {
+    if (connectionStatus === 'disconnected') {
+      setLastProcessedAddress(null);
+      setIsProcessing(false);
     }
-  }, [account?.address, connectionStatus]);
+  }, [connectionStatus]);
 
   return account ? <Dashboard client={client} /> : <LoginPage client={client} wallets={wallets} />;
 }
