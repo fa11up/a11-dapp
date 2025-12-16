@@ -28,7 +28,7 @@ const Dashboard: React.FC<DashboardProps> = ({ client }) => {
       if (savedName) {
         setUserName(savedName);
       } else {
-        setUserName('Web3 User');
+        setUserName('family member');
       }
     }
   }, [account?.address]);
