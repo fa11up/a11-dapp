@@ -141,7 +141,7 @@ function AppContent() {
 
           console.log('Sending user data:', userData);
 
-          const response = await fetch(`${API_URL}/api/user/`, {
+          const response = await fetch(`${API_URL}/api/signup`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
