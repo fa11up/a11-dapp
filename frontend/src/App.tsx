@@ -34,8 +34,8 @@ const wallets = [
     },
   }),
   createWallet("io.metamask"),
-  createWallet("app.phantom"),
-  createWallet("com.coinbase.wallet")
+  createWallet("com.coinbase.wallet"),
+  createWallet("walletConnect"),
 ];
 
 // Remove trailing slash from API_URL to prevent double slashes
@@ -130,18 +130,34 @@ function AppContent() {
 
           // Add social ID based on auth method
           if (socialId) {
-            if (authMethod === 'google') {
-              userData.googleId = socialId;
-            } else if (authMethod === 'apple') {
-              userData.appleId = socialId;
-            } else if (authMethod === 'facebook') {
-              userData.facebookId = socialId;
+            switch (authMethod) {
+              case 'google':
+                userData.googleId = socialId;
+                break;
+              case 'coinbase':
+                userData.coinbaseId = socialId;
+                break;
+              case 'facebook':
+                userData.facebookId = socialId;
+                break;
+              case 'x':
+                userData.xId = socialId;
+                break;
+              case 'github':
+                userData.githubId = socialId;
+                break;
+              case 'twitch':
+                userData.twitchId = socialId;
+                break;
+              case 'discord':
+                userData.discordId = socialId;
+                break;
             }
           }
 
           console.log('Sending user data:', userData);
 
-          const response = await fetch(`${API_URL}/api/signup`, {
+          const response = await fetch(`${API_URL}/api/user/signup`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

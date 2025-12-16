@@ -10,7 +10,7 @@ export interface Env {
 
 // CORS headers helper
 function corsHeaders(origin: string | null) {
-  const allowedOrigins = ['https://a11.fund', 'https://api.a11.fund', 'http://localhost:5173', 'http://localhost:3000'];
+  const allowedOrigins = ['https://a11.fund', 'https://api.a11.fund', 'https://a11-dapp.pages.dev','http://localhost:5173', 'http://localhost:3000'];
   const requestOrigin = origin || '';
   
   return {
@@ -101,8 +101,12 @@ export default {
           authMethod, 
           profileImage,
           googleId,
-          appleId,
-          facebookId
+          coinbaseId,
+          facebookId,
+          xId,
+          githubId,
+          twitchId,
+          discordId
         } = body;
 
         if (!walletAddress || !authMethod) {
@@ -124,14 +128,18 @@ export default {
           );
         }
 
-        // Explicitly set undefined values to null for D1
-        const emailValue = email !== undefined && email !== '' ? email.toLowerCase() : "";
-        const phoneValue = phoneNumber !== undefined && phoneNumber !== '' ? phoneNumber : "";
-        const displayNameValue = displayName !== undefined && displayName !== '' ? displayName : 'Web3 User';
-        const profileImageValue = profileImage !== undefined && profileImage !== '' ? profileImage : "";
-        const googleIdValue = googleId !== undefined && googleId !== '' ? googleId : "";
-        const appleIdValue = appleId !== undefined && appleId !== '' ? appleId : "";
-        const facebookIdValue = facebookId !== undefined && facebookId !== '' ? facebookId : "";
+        // Explicitly set undefined/null/empty values to null for D1
+        const emailValue = (email && email !== '') ? email.toLowerCase() : null;
+        const phoneValue = (phoneNumber && phoneNumber !== '') ? phoneNumber : null;
+        const displayNameValue = (displayName && displayName !== '') ? displayName : 'Web3 User';
+        const profileImageValue = (profileImage && profileImage !== '') ? profileImage : null;
+        const googleIdValue = (googleId && googleId !== '') ? googleId : null;
+        const coinbaseIdValue = (coinbaseId && coinbaseId !== '') ? coinbaseId : null;
+        const facebookIdValue = (facebookId && facebookId !== '') ? facebookId : null;
+        const xIdValue = (xId && xId !== '') ? xId : null;
+        const githubIdValue = (githubId && githubId !== '') ? githubId : null;
+        const twitchIdValue = (twitchId && twitchId !== '') ? twitchId : null;
+        const discordIdValue = (discordId && discordId !== '') ? discordId : null;
 
         console.log('Signup values:', {
           walletAddress: walletAddress.toLowerCase(),
@@ -141,17 +149,22 @@ export default {
           authMethod,
           profileImageValue,
           googleIdValue,
-          appleIdValue,
-          facebookIdValue
+          coinbaseIdValue,
+          facebookIdValue,
+          xIdValue,
+          githubIdValue,
+          twitchIdValue,
+          discordIdValue
         });
 
         // Create new user
         const result = await env.DB.prepare(
           `INSERT INTO users (
             wallet_address, email, phone_number, display_name, auth_method, profile_image,
-            google_id, apple_id, facebook_id, last_login_at, login_count, created_at, updated_at
+            google_id, coinbase_id, facebook_id, x_id, github_id, twitch_id, discord_id,
+            last_login_at, login_count, created_at, updated_at
           )
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), 1, datetime('now'), datetime('now'))
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), 1, datetime('now'), datetime('now'))
            RETURNING *`
         ).bind(
           walletAddress.toLowerCase(),
@@ -161,8 +174,12 @@ export default {
           authMethod,
           profileImageValue,
           googleIdValue,
-          appleIdValue,
-          facebookIdValue
+          coinbaseIdValue,
+          facebookIdValue,
+          xIdValue,
+          githubIdValue,
+          twitchIdValue,
+          discordIdValue
         ).first();
 
         return new Response(
@@ -187,23 +204,23 @@ export default {
         const updates = ['last_login_at = datetime(\'now\')', 'login_count = login_count + 1'];
         const values = [];
 
-        if (authMethod) {
+        if (authMethod && authMethod !== '') {
           updates.push('auth_method = ?');
           values.push(authMethod);
         }
-        if (email !== undefined && email !== '') {
+        if (email && email !== '') {
           updates.push('email = ?');
           values.push(email.toLowerCase());
         }
-        if (phoneNumber !== undefined && phoneNumber !== '') {
+        if (phoneNumber && phoneNumber !== '') {
           updates.push('phone_number = ?');
           values.push(phoneNumber);
         }
-        if (displayName !== undefined && displayName !== '' && displayName !== 'Web3 User') {
+        if (displayName && displayName !== '' && displayName !== 'Web3 User') {
           updates.push('display_name = ?');
           values.push(displayName);
         }
-        if (profileImage !== undefined && profileImage !== '') {
+        if (profileImage && profileImage !== '') {
           updates.push('profile_image = ?');
           values.push(profileImage);
         }
@@ -238,11 +255,11 @@ export default {
           'SELECT * FROM users WHERE wallet_address = ?'
         ).bind(walletAddress.toLowerCase()).first();
 
-        // Explicitly set undefined values to null for D1
-        const emailValue = email !== undefined && email !== '' ? email.toLowerCase() : "";
-        const displayNameValue = displayName !== undefined && displayName !== '' ? displayName : "";
-        const authMethodValue = authMethod !== undefined && authMethod !== '' ? authMethod : "";
-        const profileImageValue = profileImage !== undefined && profileImage !== '' ? profileImage : "";
+        // Explicitly set undefined/null/empty values to null for D1
+        const emailValue = (email && email !== '') ? email.toLowerCase() : null;
+        const displayNameValue = (displayName && displayName !== '') ? displayName : null;
+        const authMethodValue = (authMethod && authMethod !== '') ? authMethod : null;
+        const profileImageValue = (profileImage && profileImage !== '') ? profileImage : null;
 
         let result;
         if (existingUser) {
@@ -312,18 +329,18 @@ export default {
         const updates = [];
         const values = [];
 
-        // Explicitly handle undefined values
+        // Explicitly handle undefined/null/empty values
         if (email !== undefined) {
           updates.push('email = ?');
-          values.push(email !== null && email !== '' ? email.toLowerCase() : "");
+          values.push((email && email !== '') ? email.toLowerCase() : null);
         }
         if (displayName !== undefined) {
           updates.push('display_name = ?');
-          values.push(displayName !== null && displayName !== '' ? displayName : "");
+          values.push((displayName && displayName !== '') ? displayName : null);
         }
         if (profileImage !== undefined) {
           updates.push('profile_image = ?');
-          values.push(profileImage !== null && profileImage !== '' ? profileImage : "");
+          values.push((profileImage && profileImage !== '') ? profileImage : null);
         }
 
         if (updates.length === 0) {
