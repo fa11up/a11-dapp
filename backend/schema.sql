@@ -1,6 +1,6 @@
 -- Simplified users table
 CREATE TABLE IF NOT EXISTS users (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id INTEGER PRIMARY KEY,
   wallet_address VARCHAR(42) UNIQUE NOT NULL,
   email VARCHAR(255),
   phone_number VARCHAR(20),
