@@ -1,172 +1,319 @@
-import { Pool } from 'pg';
-import { getAssetFromKV } from '@cloudflare/kv-asset-handler';
+/**
+ * Cloudflare Worker for D1 Database API
+ * This replaces the Express server for Cloudflare deployment
+ */
 
-interface Env {
-  DATABASE_URL: string;
-  __STATIC_CONTENT: any;
+export interface Env {
+  DB: D1Database;
+  ALLOWED_ORIGINS?: string;
 }
 
-let pool: Pool | null = null;
-
-function getPool(env: Env) {
-  if (!pool) {
-    pool = new Pool({
-      connectionString: env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false }
-    });
-  }
-  return pool;
+// CORS headers helper
+function corsHeaders(origin: string | null) {
+  const allowedOrigins = ['https://a11.fund', 'http://localhost:5173', 'http://localhost:3000'];
+  const requestOrigin = origin || '';
+  
+  return {
+    'Access-Control-Allow-Origin': allowedOrigins.includes(requestOrigin) ? requestOrigin : allowedOrigins[0],
+    'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  };
 }
 
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    const path = url.pathname;
-    const method = request.method;
-
-    const corsHeaders = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
+    const origin = request.headers.get('Origin');
+    const headers = {
+      'Content-Type': 'application/json',
+      ...corsHeaders(origin),
     };
 
-    if (method === 'OPTIONS') {
-      return new Response(null, { headers: corsHeaders });
+    // Handle CORS preflight
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { headers });
+    }
+
+    // Check if database binding exists
+    if (!env.DB) {
+      console.error('D1 database binding not found. Check wrangler.toml configuration.');
+      return new Response(
+        JSON.stringify({ 
+          error: 'Database not configured',
+          details: 'D1 database binding is missing. Please check wrangler.toml configuration.'
+        }),
+        { status: 500, headers }
+      );
     }
 
     try {
-      // API routes
-      if (path.startsWith('/api/')) {
-        const pool = getPool(env);
+      // Health check
+      if (url.pathname === '/api/health') {
+        return new Response(
+          JSON.stringify({ status: 'ok', message: 'Server is running' }),
+          { headers }
+        );
+      }
 
-        if (path === '/api/health') {
-          return new Response(JSON.stringify({ status: 'ok' }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
-        }
+      // Get user by wallet address
+      if (url.pathname.match(/^\/api\/user\/0x[a-fA-F0-9]{40}$/) && request.method === 'GET') {
+        const address = url.pathname.split('/').pop()?.toLowerCase();
+        
+        const result = await env.DB.prepare(
+          'SELECT * FROM users WHERE wallet_address = ?'
+        ).bind(address).first();
 
-        if (path.match(/^\/api\/user\/0x[a-fA-F0-9]{40}$/) && method === 'GET') {
-          const address = path.split('/').pop()!.toLowerCase();
-          const result = await pool.query('SELECT * FROM users WHERE wallet_address = $1', [address]);
-          
+        if (!result) {
           return new Response(
-            JSON.stringify(result.rows.length ? result.rows[0] : { error: 'User not found' }),
-            { 
-              status: result.rows.length ? 200 : 404,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            }
+            JSON.stringify({ error: 'User not found' }),
+            { status: 404, headers }
           );
         }
 
-        if (path === '/api/user/signup' && method === 'POST') {
-          const body = await request.json() as any;
-          const { walletAddress, email, displayName, authMethod, profileImage } = body;
-          
-          if (!walletAddress || !authMethod) {
-            return new Response(
-              JSON.stringify({ error: 'Wallet address and auth method are required' }),
-              { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            );
-          }
+        return new Response(JSON.stringify(result), { headers });
+      }
 
-          const existingUser = await pool.query(
-            'SELECT * FROM users WHERE wallet_address = $1 OR (email = $2 AND email IS NOT NULL)',
-            [walletAddress.toLowerCase(), email?.toLowerCase()]
+      // Check if user exists by email
+      if (url.pathname.match(/^\/api\/user\/check\/email\/.+$/) && request.method === 'GET') {
+        const email = url.pathname.split('/').pop()?.toLowerCase();
+        
+        const result = await env.DB.prepare(
+          'SELECT wallet_address FROM users WHERE email = ?'
+        ).bind(email).first();
+
+        return new Response(
+          JSON.stringify({
+            exists: !!result,
+            walletAddress: result ? result.wallet_address : null,
+          }),
+          { headers }
+        );
+      }
+
+      // Create new user (Sign Up)
+      if (url.pathname === '/api/user/signup' && request.method === 'POST') {
+        const body = await request.json() as any;
+        const { walletAddress, email, displayName, authMethod, profileImage } = body;
+
+        if (!walletAddress || !authMethod) {
+          return new Response(
+            JSON.stringify({ error: 'Wallet address and auth method are required' }),
+            { status: 400, headers }
           );
+        }
 
-          if (existingUser.rows.length > 0) {
-            return new Response(
-              JSON.stringify({ error: 'User already exists', user: existingUser.rows[0] }),
-              { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            );
-          }
+        // Check if user already exists
+        const existingUser = await env.DB.prepare(
+          'SELECT * FROM users WHERE wallet_address = ?'
+        ).bind(walletAddress.toLowerCase()).first();
 
-          const result = await pool.query(
+        if (existingUser) {
+          return new Response(
+            JSON.stringify({ error: 'User already exists', user: existingUser }),
+            { status: 409, headers }
+          );
+        }
+
+        // Explicitly set undefined values to null for D1
+        const emailValue = email !== undefined ? email.toLowerCase() : null;
+        const displayNameValue = displayName !== undefined ? displayName : 'Web3 User';
+        const profileImageValue = profileImage !== undefined ? profileImage : null;
+
+        console.log('Signup values:', {
+          walletAddress: walletAddress.toLowerCase(),
+          emailValue,
+          displayNameValue,
+          authMethod,
+          profileImageValue
+        });
+
+        // Create new user
+        const result = await env.DB.prepare(
+          `INSERT INTO users (wallet_address, email, display_name, auth_method, profile_image, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+           RETURNING *`
+        ).bind(
+          walletAddress.toLowerCase(),
+          emailValue,
+          displayNameValue,
+          authMethod,
+          profileImageValue
+        ).first();
+
+        return new Response(
+          JSON.stringify({ message: 'User created successfully', user: result }),
+          { status: 201, headers }
+        );
+      }
+
+      // Create or update user (Sign In)
+      if (url.pathname === '/api/user' && request.method === 'POST') {
+        const body = await request.json() as any;
+        const { walletAddress, email, displayName, authMethod, profileImage } = body;
+
+        // First try to get existing user
+        const existingUser = await env.DB.prepare(
+          'SELECT * FROM users WHERE wallet_address = ?'
+        ).bind(walletAddress.toLowerCase()).first();
+
+        // Explicitly set undefined values to null for D1
+        const emailValue = email !== undefined ? email.toLowerCase() : null;
+        const displayNameValue = displayName !== undefined ? displayName : null;
+        const authMethodValue = authMethod !== undefined ? authMethod : null;
+        const profileImageValue = profileImage !== undefined ? profileImage : null;
+
+        let result;
+        if (existingUser) {
+          // Update existing user - only update non-null values
+          result = await env.DB.prepare(
+            `UPDATE users SET 
+              email = COALESCE(?, email),
+              display_name = COALESCE(?, display_name),
+              auth_method = COALESCE(?, auth_method),
+              profile_image = COALESCE(?, profile_image),
+              updated_at = datetime('now')
+             WHERE wallet_address = ?
+             RETURNING *`
+          ).bind(
+            emailValue,
+            displayNameValue,
+            authMethodValue,
+            profileImageValue,
+            walletAddress.toLowerCase()
+          ).first();
+        } else {
+          // Insert new user
+          result = await env.DB.prepare(
             `INSERT INTO users (wallet_address, email, display_name, auth_method, profile_image, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) RETURNING *`,
-            [walletAddress.toLowerCase(), email?.toLowerCase(), displayName || 'Web3 User', authMethod, profileImage]
-          );
+             VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+             RETURNING *`
+          ).bind(
+            walletAddress.toLowerCase(),
+            emailValue,
+            displayNameValue || 'Web3 User',
+            authMethodValue || 'wallet',
+            profileImageValue
+          ).first();
+        }
 
+        return new Response(JSON.stringify(result), { headers });
+      }
+
+      // Update user display name
+      if (url.pathname.match(/^\/api\/user\/0x[a-fA-F0-9]{40}\/name$/) && request.method === 'PATCH') {
+        const address = url.pathname.split('/')[3].toLowerCase();
+        const body = await request.json() as any;
+        const { displayName } = body;
+
+        const result = await env.DB.prepare(
+          `UPDATE users SET display_name = ?, updated_at = datetime('now')
+           WHERE wallet_address = ?
+           RETURNING *`
+        ).bind(displayName, address).first();
+
+        if (!result) {
           return new Response(
-            JSON.stringify({ message: 'User created successfully', user: result.rows[0] }),
-            { status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            JSON.stringify({ error: 'User not found' }),
+            { status: 404, headers }
           );
         }
 
-        if (path.match(/^\/api\/user\/0x[a-fA-F0-9]{40}\/name$/) && method === 'PATCH') {
-          const address = path.split('/')[3].toLowerCase();
-          const body = await request.json() as any;
-          
-          const result = await pool.query(
-            `UPDATE users SET display_name = $1, updated_at = NOW() WHERE wallet_address = $2 RETURNING *`,
-            [body.displayName, address]
-          );
+        return new Response(JSON.stringify(result), { headers });
+      }
 
+      // Update user profile
+      if (url.pathname.match(/^\/api\/user\/0x[a-fA-F0-9]{40}\/profile$/) && request.method === 'PATCH') {
+        const address = url.pathname.split('/')[3].toLowerCase();
+        const body = await request.json() as any;
+        const { email, displayName, profileImage } = body;
+
+        const updates = [];
+        const values = [];
+
+        // Explicitly handle undefined values
+        if (email !== undefined) {
+          updates.push('email = ?');
+          values.push(email !== null ? email.toLowerCase() : null);
+        }
+        if (displayName !== undefined) {
+          updates.push('display_name = ?');
+          values.push(displayName !== null ? displayName : null);
+        }
+        if (profileImage !== undefined) {
+          updates.push('profile_image = ?');
+          values.push(profileImage !== null ? profileImage : null);
+        }
+
+        if (updates.length === 0) {
           return new Response(
-            JSON.stringify(result.rows.length ? result.rows[0] : { error: 'User not found' }),
-            { 
-              status: result.rows.length ? 200 : 404,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            }
+            JSON.stringify({ error: 'No fields to update' }),
+            { status: 400, headers }
           );
         }
 
-        if (path === '/api/users' && method === 'GET') {
-          const result = await pool.query(
-            'SELECT wallet_address, email, display_name, auth_method, created_at FROM users ORDER BY created_at DESC'
+        updates.push(`updated_at = datetime('now')`);
+        values.push(address);
+
+        const result = await env.DB.prepare(
+          `UPDATE users SET ${updates.join(', ')} WHERE wallet_address = ? RETURNING *`
+        ).bind(...values).first();
+
+        if (!result) {
+          return new Response(
+            JSON.stringify({ error: 'User not found' }),
+            { status: 404, headers }
           );
-          
-          return new Response(JSON.stringify(result.rows), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
+        }
+
+        return new Response(JSON.stringify(result), { headers });
+      }
+
+      // Get all users
+      if (url.pathname === '/api/users' && request.method === 'GET') {
+        const result = await env.DB.prepare(
+          'SELECT wallet_address, email, display_name, auth_method, created_at FROM users ORDER BY created_at DESC'
+        ).all();
+
+        return new Response(JSON.stringify(result.results), { headers });
+      }
+
+      // Delete user
+      if (url.pathname.match(/^\/api\/user\/0x[a-fA-F0-9]{40}$/) && request.method === 'DELETE') {
+        const address = url.pathname.split('/').pop()?.toLowerCase();
+
+        const result = await env.DB.prepare(
+          'DELETE FROM users WHERE wallet_address = ? RETURNING *'
+        ).bind(address).first();
+
+        if (!result) {
+          return new Response(
+            JSON.stringify({ error: 'User not found' }),
+            { status: 404, headers }
+          );
         }
 
         return new Response(
-          JSON.stringify({ error: 'Not found' }),
-          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          JSON.stringify({ message: 'User deleted successfully', user: result }),
+          { headers }
         );
       }
 
-      // Serve static files using getAssetFromKV
-      try {
-        return await getAssetFromKV(
-          {
-            request,
-            waitUntil: ctx.waitUntil.bind(ctx),
-          },
-          {
-            ASSET_NAMESPACE: env.__STATIC_CONTENT,
-            ASSET_MANIFEST: {},
-          }
-        );
-      } catch (e) {
-        // SPA fallback - serve index.html for 404s
-        try {
-          const notFoundResponse = await getAssetFromKV(
-            {
-              request: new Request(`${url.origin}/index.html`, request),
-              waitUntil: ctx.waitUntil.bind(ctx),
-            },
-            {
-              ASSET_NAMESPACE: env.__STATIC_CONTENT,
-              ASSET_MANIFEST: {},
-            }
-          );
-          return new Response(notFoundResponse.body, {
-            ...notFoundResponse,
-            status: 200,
-          });
-        } catch (e) {
-          return new Response('Not found', { status: 404 });
-        }
-      }
-
-    } catch (error) {
-      console.error('Worker error:', error);
+      // Route not found
       return new Response(
-        JSON.stringify({ error: 'Internal server error', message: String(error) }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Not found' }),
+        { status: 404, headers }
+      );
+
+    } catch (error: any) {
+      console.error('Error:', error);
+      return new Response(
+        JSON.stringify({ 
+          error: 'Internal server error', 
+          details: error?.message || String(error),
+          stack: error?.stack
+        }),
+        { status: 500, headers }
       );
     }
-  }
+  },
 };
