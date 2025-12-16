@@ -33,7 +33,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ client, wallets }) => {
                 </div>
                 <div>
                   <h3 className="text-white font-semibold mb-1">Crypto Wallets</h3>
-                  <p className="text-gray-400 text-sm">MetaMask, Coinbase, WalletConnect</p>
+                  <p className="text-gray-400 text-sm">MetaMask, Phantom, Coinbase Wallet</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
@@ -51,7 +51,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ client, wallets }) => {
                 </div>
                 <div>
                   <h3 className="text-white font-semibold mb-1">Social Login</h3>
-                  <p className="text-gray-400 text-sm">Google, Apple, Facebook, Passkey</p>
+                  <p className="text-gray-400 text-sm">Google, X, Facebook, Passkey</p>
                 </div>
               </div>
             </div>

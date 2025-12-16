@@ -12,7 +12,7 @@ dist
 dist-ssr
 *.local
 package-lock.json
-.wrangler/tmp
+.wrangler
 wrangler.toml
 
 # Editor directories and files
