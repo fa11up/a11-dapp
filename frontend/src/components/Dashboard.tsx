@@ -1,23 +1,35 @@
 import React, { useState, useEffect } from 'react';
-import { useAddress, useDisconnect, useBalance } from "@thirdweb-dev/react";
+import { useActiveAccount, useDisconnect, useWalletBalance } from "thirdweb/react";
 import { LogOut, Wallet, TrendingUp, Activity, Settings, User, Copy, Check } from 'lucide-react';
+import { ethereum } from "thirdweb/chains";
+import type { ThirdwebClient } from "thirdweb";
 
-const Dashboard: React.FC = () => {
-  const address = useAddress();
-  const disconnect = useDisconnect();
-  const { data: balance } = useBalance();
+interface DashboardProps {
+  client?: ThirdwebClient;
+}
+
+const Dashboard: React.FC<DashboardProps> = () => {
+  const account = useActiveAccount();
+  const { disconnect } = useDisconnect();
+  const { data: balance } = useWalletBalance({
+    chain: ethereum,
+    address: account?.address,
+  });
+  
   const [userName, setUserName] = useState<string>('');
   const [isEditingName, setIsEditingName] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
 
   useEffect(() => {
-    const savedName = localStorage.getItem(`userName_${address}`);
-    if (savedName) {
-      setUserName(savedName);
-    } else {
-      setUserName('Web3 User');
+    if (account?.address) {
+      const savedName = localStorage.getItem(`userName_${account.address}`);
+      if (savedName) {
+        setUserName(savedName);
+      } else {
+        setUserName('Web3 User');
+      }
     }
-  }, [address]);
+  }, [account?.address]);
 
   const formatAddress = (addr: string): string => {
     if (!addr) return '';
@@ -25,15 +37,15 @@ const Dashboard: React.FC = () => {
   };
 
   const handleSaveName = () => {
-    if (address && userName.trim()) {
-      localStorage.setItem(`userName_${address}`, userName.trim());
+    if (account?.address && userName.trim()) {
+      localStorage.setItem(`userName_${account.address}`, userName.trim());
       setIsEditingName(false);
     }
   };
 
   const copyAddress = () => {
-    if (address) {
-      navigator.clipboard.writeText(address);
+    if (account?.address) {
+      navigator.clipboard.writeText(account.address);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
@@ -87,7 +99,7 @@ const Dashboard: React.FC = () => {
                 )}
                 <div className="flex items-center gap-2 mt-1">
                   <p className="text-gray-300 font-mono text-sm">
-                    {formatAddress(address || '')}
+                    {formatAddress(account?.address || '')}
                   </p>
                   <button
                     onClick={copyAddress}
@@ -174,7 +186,7 @@ const Dashboard: React.FC = () => {
             <div className="flex justify-between items-center py-2 border-b border-white/10">
               <span className="text-gray-400">Full Address</span>
               <div className="flex items-center gap-2">
-                <span className="text-white font-mono text-sm">{address}</span>
+                <span className="text-white font-mono text-sm">{account?.address}</span>
                 <button
                   onClick={copyAddress}
                   className="text-gray-300 hover:text-white transition-colors"
@@ -185,7 +197,7 @@ const Dashboard: React.FC = () => {
             </div>
             <div className="flex justify-between items-center py-2 border-b border-white/10">
               <span className="text-gray-400">Wallet Type</span>
-              <span className="text-white">MetaMask</span>
+              <span className="text-white">In-App Wallet</span>
             </div>
             <div className="flex justify-between items-center py-2">
               <span className="text-gray-400">Status</span>

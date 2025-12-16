@@ -1,7 +1,14 @@
-import { ConnectWallet } from "@thirdweb-dev/react";
+import { ConnectButton } from "thirdweb/react";
 import { Wallet, Mail, AtSign } from 'lucide-react';
+import type { ThirdwebClient } from "thirdweb";
+import type { Wallet as WalletType } from "thirdweb/wallets";
 
-const LoginPage: React.FC = () => {
+interface LoginPageProps {
+  client: ThirdwebClient;
+  wallets: WalletType[];
+}
+
+const LoginPage: React.FC<LoginPageProps> = ({ client, wallets }) => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black opacity-20"></div>
@@ -34,8 +41,8 @@ const LoginPage: React.FC = () => {
                   <Mail className="w-4 h-4 text-blue-300" />
                 </div>
                 <div>
-                  <h3 className="text-white font-semibold mb-1">Email</h3>
-                  <p className="text-gray-400 text-sm">Sign in with your email address</p>
+                  <h3 className="text-white font-semibold mb-1">Email & Phone</h3>
+                  <p className="text-gray-400 text-sm">Sign in with your email or phone number</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
@@ -44,7 +51,7 @@ const LoginPage: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="text-white font-semibold mb-1">Social Login</h3>
-                  <p className="text-gray-400 text-sm">Google, Apple, Facebook</p>
+                  <p className="text-gray-400 text-sm">Google, Apple, Facebook, Passkey</p>
                 </div>
               </div>
             </div>
@@ -52,16 +59,17 @@ const LoginPage: React.FC = () => {
 
           {/* ThirdWeb Connect Button */}
           <div className="flex justify-center">
-            <ConnectWallet
+            <ConnectButton
+              client={client}
+              wallets={wallets}
               theme="dark"
-              btnTitle="Connect"
-              modalTitle="Choose Login Method"
-              modalSize="wide"
-              welcomeScreen={{
-                title: "Welcome to Web3 Login",
-                subtitle: "Connect your wallet or use email/social login",
+              connectButton={{
+                label: "Connect Wallet",
               }}
-              className="!w-full"
+              connectModal={{
+                title: "Choose Login Method",
+                size: "wide",
+              }}
             />
           </div>
 
@@ -74,7 +82,7 @@ const LoginPage: React.FC = () => {
           {/* Footer */}
           <div className="mt-8 pt-6 border-t border-white/10">
             <p className="text-center text-gray-400 text-xs">
-              Powered by ThirdWeb SDK
+              Powered by ThirdWeb SDK v5
             </p>
           </div>
         </div>

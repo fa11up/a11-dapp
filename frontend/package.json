@@ -13,8 +13,7 @@
     "worker:deploy": "wrangler deploy"
   },
   "dependencies": {
-    "@thirdweb-dev/react": "^4.9.4",
-    "@thirdweb-dev/sdk": "^4.0.99",
+    "thirdweb": "^5.72.0",
     "lucide-react": "^0.561.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"
@@ -43,7 +42,6 @@
     "web3-core": "^4.3.2",
     "@walletconnect/utils": "^2.17.3",
     "@walletconnect/core": "^2.17.3",
-    "@walletconnect/sign-client": "^2.17.3",
-    "ethers": "^6.13.4"
+    "@walletconnect/sign-client": "^2.17.3"
   }
 }

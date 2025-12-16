@@ -1,33 +1,68 @@
 import { 
   ThirdwebProvider, 
-  useAddress,
-  useConnectionStatus,
-  metamaskWallet,
-  coinbaseWallet,
-  walletConnect,
-  embeddedWallet,
-} from "@thirdweb-dev/react";
+  ConnectButton,
+  useActiveAccount,
+  useActiveWalletConnectionStatus,
+} from "thirdweb/react";
+import { createThirdwebClient } from "thirdweb";
+import { inAppWallet, createWallet } from "thirdweb/wallets";
 import { useEffect } from 'react';
 
 import LoginPage from './components/LoginPage';
 import Dashboard from './components/Dashboard';
 
+// Create thirdweb client
+const client = createThirdwebClient({
+  clientId: import.meta.env.VITE_THIRDWEB_CLIENT_ID,
+});
+
+// Configure in-app wallet with email and social login options
+const wallets = [
+  inAppWallet({
+    auth: {
+      options: [
+        "email",
+        "google",
+        "facebook",
+        "phone",
+        "metamask",
+        "walletconnect",
+        "coinbase",
+        "trustwallet",
+        "zerion",
+        "lattice",
+        "bitget",
+        "safe",
+        "gnosis",
+        "argent",
+        "portis",
+        "fortmatic",
+        "portkey",
+        "passkey",
+      ],
+    },
+  }),
+  createWallet("io.metamask"),
+  createWallet("com.coinbase.wallet"),
+  createWallet("walletConnect"),
+];
+
 // Remove trailing slash from API_URL to prevent double slashes
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3001').replace(/\/$/, '');
 
 function AppContent() {
-  const address = useAddress();
-  const connectionStatus = useConnectionStatus();
+  const account = useActiveAccount();
+  const connectionStatus = useActiveWalletConnectionStatus();
 
   useEffect(() => {
     const registerUser = async () => {
-      if (!address) return;
+      if (!account?.address) return;
 
       try {
-        console.log('Registering user with address:', address);
+        console.log('Registering user with address:', account.address);
         
         // First check if user exists
-        const checkResponse = await fetch(`${API_URL}/api/user/${address}`);
+        const checkResponse = await fetch(`${API_URL}/api/user/${account.address}`);
         
         if (checkResponse.status === 404) {
           // User doesn't exist, create new user
@@ -39,9 +74,11 @@ function AppContent() {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              walletAddress: address,
+              walletAddress: account.address,
               authMethod: 'wallet',
               displayName: 'Web3 User',
+              email: "",
+              profileImage: "",
             }),
           });
 
@@ -58,53 +95,23 @@ function AppContent() {
         } else if (checkResponse.ok) {
           // User exists, optionally update last login
           console.log('User already exists in database');
-          
-          // You can update the user here if needed
-          await fetch(`${API_URL}/api/user`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              walletAddress: address,
-              authMethod: 'wallet',
-            }),
-          });
         }
       } catch (error) {
         console.error('Error registering user:', error);
       }
     };
 
-    if (connectionStatus === 'connected' && address) {
+    if (connectionStatus === 'connected' && account?.address) {
       registerUser();
     }
-  }, [address, connectionStatus]);
+  }, [account?.address, connectionStatus]);
 
-  return address ? <Dashboard /> : <LoginPage />;
+  return account ? <Dashboard /> : <LoginPage client={client} wallets={wallets} />;
 }
 
 function App() {
   return (
-    <ThirdwebProvider
-      activeChain="ethereum"
-      clientId={import.meta.env.VITE_THIRDWEB_CLIENT_ID}
-      supportedWallets={[
-        metamaskWallet(),
-        coinbaseWallet(),
-        walletConnect(),
-        embeddedWallet({
-          auth: {
-            options: [
-              "email",
-              "google",
-              "apple",
-              "facebook",
-            ],
-          },
-        }),
-      ]}
-    >
+    <ThirdwebProvider>
       <AppContent />
     </ThirdwebProvider>
   );
