@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useActiveAccount, useDisconnect, useWalletBalance, useActiveWallet, Blobbie } from "thirdweb/react";
-import { LogOut, Wallet, TrendingUp, Activity, Settings, User, Copy, Check } from 'lucide-react';
+import { LogOut, Wallet, TrendingUp, Activity, Settings, Copy, Check } from 'lucide-react';
 import { ethereum } from "thirdweb/chains";
 import type { ThirdwebClient } from "thirdweb";
 
