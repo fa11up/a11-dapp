@@ -22,7 +22,12 @@ const wallets = [
       options: [
         "email",
         "google",
+        "coinbase",
         "facebook",
+        "x",
+        "github",
+        "twitch",
+        "discord",
         "phone",
         "passkey",
       ],
