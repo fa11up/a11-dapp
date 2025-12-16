@@ -10,7 +10,7 @@ export interface Env {
 
 // CORS headers helper
 function corsHeaders(origin: string | null) {
-  const allowedOrigins = ['https://a11.fund', 'http://localhost:5173', 'http://localhost:3000'];
+  const allowedOrigins = ['https://a11.fund', 'https://api.a11.fund', 'http://localhost:5173', 'http://localhost:3000'];
   const requestOrigin = origin || '';
   
   return {
@@ -32,6 +32,18 @@ export default {
     // Handle CORS preflight
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers });
+    }
+
+    // Check if database binding exists
+    if (!env.DB) {
+      console.error('D1 database binding not found. Check wrangler.toml configuration.');
+      return new Response(
+        JSON.stringify({ 
+          error: 'Database not configured',
+          details: 'D1 database binding is missing. Please check wrangler.toml configuration.'
+        }),
+        { status: 500, headers }
+      );
     }
 
     try {
@@ -78,10 +90,20 @@ export default {
         );
       }
 
-      // Create new user (Sign Up)
-      if (url.pathname === '/api/user/signup' && request.method === 'POST') {
+      // Create new user (Sign Up) - supports both /api/signup and /api/user/signup
+      if ((url.pathname === '/api/user/signup' || url.pathname === '/api/signup') && request.method === 'POST') {
         const body = await request.json() as any;
-        const { walletAddress, email, displayName, authMethod, profileImage } = body;
+        const { 
+          walletAddress, 
+          email, 
+          phoneNumber,
+          displayName, 
+          authMethod, 
+          profileImage,
+          googleId,
+          appleId,
+          facebookId
+        } = body;
 
         if (!walletAddress || !authMethod) {
           return new Response(
@@ -92,8 +114,8 @@ export default {
 
         // Check if user already exists
         const existingUser = await env.DB.prepare(
-          'SELECT * FROM users WHERE wallet_address = ? OR (email = ? AND email IS NOT NULL)'
-        ).bind(walletAddress.toLowerCase(), email?.toLowerCase()).first();
+          'SELECT * FROM users WHERE wallet_address = ?'
+        ).bind(walletAddress.toLowerCase()).first();
 
         if (existingUser) {
           return new Response(
@@ -102,22 +124,107 @@ export default {
           );
         }
 
+        // Explicitly set undefined values to null for D1
+        const emailValue = email !== undefined && email !== '' ? email.toLowerCase() : "";
+        const phoneValue = phoneNumber !== undefined && phoneNumber !== '' ? phoneNumber : "";
+        const displayNameValue = displayName !== undefined && displayName !== '' ? displayName : 'Web3 User';
+        const profileImageValue = profileImage !== undefined && profileImage !== '' ? profileImage : "";
+        const googleIdValue = googleId !== undefined && googleId !== '' ? googleId : "";
+        const appleIdValue = appleId !== undefined && appleId !== '' ? appleId : "";
+        const facebookIdValue = facebookId !== undefined && facebookId !== '' ? facebookId : "";
+
+        console.log('Signup values:', {
+          walletAddress: walletAddress.toLowerCase(),
+          emailValue,
+          phoneValue,
+          displayNameValue,
+          authMethod,
+          profileImageValue,
+          googleIdValue,
+          appleIdValue,
+          facebookIdValue
+        });
+
         // Create new user
         const result = await env.DB.prepare(
-          `INSERT INTO users (wallet_address, email, display_name, auth_method, profile_image, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+          `INSERT INTO users (
+            wallet_address, email, phone_number, display_name, auth_method, profile_image,
+            google_id, apple_id, facebook_id, last_login_at, login_count, created_at, updated_at
+          )
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), 1, datetime('now'), datetime('now'))
            RETURNING *`
         ).bind(
           walletAddress.toLowerCase(),
-          email?.toLowerCase() || null,
-          displayName || 'Web3 User',
+          emailValue,
+          phoneValue,
+          displayNameValue,
           authMethod,
-          profileImage || null
+          profileImageValue,
+          googleIdValue,
+          appleIdValue,
+          facebookIdValue
         ).first();
 
         return new Response(
           JSON.stringify({ message: 'User created successfully', user: result }),
           { status: 201, headers }
+        );
+      }
+
+      // Update user on login
+      if (url.pathname === '/api/user/login' && request.method === 'POST') {
+        const body = await request.json() as any;
+        const { walletAddress, authMethod, email, phoneNumber, displayName, profileImage } = body;
+
+        if (!walletAddress) {
+          return new Response(
+            JSON.stringify({ error: 'Wallet address is required' }),
+            { status: 400, headers }
+          );
+        }
+
+        // Build update query dynamically
+        const updates = ['last_login_at = datetime(\'now\')', 'login_count = login_count + 1'];
+        const values = [];
+
+        if (authMethod) {
+          updates.push('auth_method = ?');
+          values.push(authMethod);
+        }
+        if (email !== undefined && email !== '') {
+          updates.push('email = ?');
+          values.push(email.toLowerCase());
+        }
+        if (phoneNumber !== undefined && phoneNumber !== '') {
+          updates.push('phone_number = ?');
+          values.push(phoneNumber);
+        }
+        if (displayName !== undefined && displayName !== '' && displayName !== 'Web3 User') {
+          updates.push('display_name = ?');
+          values.push(displayName);
+        }
+        if (profileImage !== undefined && profileImage !== '') {
+          updates.push('profile_image = ?');
+          values.push(profileImage);
+        }
+
+        updates.push('updated_at = datetime(\'now\')');
+        values.push(walletAddress.toLowerCase());
+
+        const result = await env.DB.prepare(
+          `UPDATE users SET ${updates.join(', ')} WHERE wallet_address = ? RETURNING *`
+        ).bind(...values).first();
+
+        if (!result) {
+          return new Response(
+            JSON.stringify({ error: 'User not found' }),
+            { status: 404, headers }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({ message: 'Login tracked successfully', user: result }),
+          { headers }
         );
       }
 
@@ -131,9 +238,15 @@ export default {
           'SELECT * FROM users WHERE wallet_address = ?'
         ).bind(walletAddress.toLowerCase()).first();
 
+        // Explicitly set undefined values to null for D1
+        const emailValue = email !== undefined && email !== '' ? email.toLowerCase() : "";
+        const displayNameValue = displayName !== undefined && displayName !== '' ? displayName : "";
+        const authMethodValue = authMethod !== undefined && authMethod !== '' ? authMethod : "";
+        const profileImageValue = profileImage !== undefined && profileImage !== '' ? profileImage : "";
+
         let result;
         if (existingUser) {
-          // Update existing user
+          // Update existing user - only update non-null values
           result = await env.DB.prepare(
             `UPDATE users SET 
               email = COALESCE(?, email),
@@ -144,24 +257,24 @@ export default {
              WHERE wallet_address = ?
              RETURNING *`
           ).bind(
-            email?.toLowerCase() || null,
-            displayName || null,
-            authMethod || null,
-            profileImage || null,
+            emailValue,
+            displayNameValue,
+            authMethodValue,
+            profileImageValue,
             walletAddress.toLowerCase()
           ).first();
         } else {
           // Insert new user
           result = await env.DB.prepare(
-            `INSERT INTO users (wallet_address, email, display_name, auth_method, profile_image, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            `INSERT INTO users (wallet_address, email, display_name, auth_method, profile_image, last_login_at, login_count, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, datetime('now'), 1, datetime('now'), datetime('now'))
              RETURNING *`
           ).bind(
             walletAddress.toLowerCase(),
-            email?.toLowerCase() || null,
-            displayName || 'Web3 User',
-            authMethod,
-            profileImage || null
+            emailValue,
+            displayNameValue || 'Web3 User',
+            authMethodValue || 'wallet',
+            profileImageValue
           ).first();
         }
 
@@ -199,17 +312,18 @@ export default {
         const updates = [];
         const values = [];
 
+        // Explicitly handle undefined values
         if (email !== undefined) {
           updates.push('email = ?');
-          values.push(email.toLowerCase());
+          values.push(email !== null && email !== '' ? email.toLowerCase() : "");
         }
         if (displayName !== undefined) {
           updates.push('display_name = ?');
-          values.push(displayName);
+          values.push(displayName !== null && displayName !== '' ? displayName : "");
         }
         if (profileImage !== undefined) {
           updates.push('profile_image = ?');
-          values.push(profileImage);
+          values.push(profileImage !== null && profileImage !== '' ? profileImage : "");
         }
 
         if (updates.length === 0) {
@@ -239,7 +353,7 @@ export default {
       // Get all users
       if (url.pathname === '/api/users' && request.method === 'GET') {
         const result = await env.DB.prepare(
-          'SELECT wallet_address, email, display_name, auth_method, created_at FROM users ORDER BY created_at DESC'
+          'SELECT wallet_address, email, phone_number, display_name, auth_method, last_login_at, login_count, created_at FROM users ORDER BY created_at DESC'
         ).all();
 
         return new Response(JSON.stringify(result.results), { headers });
@@ -272,10 +386,14 @@ export default {
         { status: 404, headers }
       );
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error:', error);
       return new Response(
-        JSON.stringify({ error: 'Internal server error', details: error.message }),
+        JSON.stringify({ 
+          error: 'Internal server error', 
+          details: error?.message || String(error),
+          stack: error?.stack
+        }),
         { status: 500, headers }
       );
     }
