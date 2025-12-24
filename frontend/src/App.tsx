@@ -8,6 +8,7 @@ import { createThirdwebClient } from "thirdweb";
 import { inAppWallet, createWallet } from "thirdweb/wallets";
 import { useEffect, useState } from 'react';
 
+import SplashPage from './components/SplashPage';
 import LoginPage from './components/LoginPage';
 import Dashboard from './components/Dashboard';
 
@@ -46,6 +47,7 @@ function AppContent() {
   const connectionStatus = useActiveWalletConnectionStatus();
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastProcessedAddress, setLastProcessedAddress] = useState<string | null>(null);
+  const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
     const handleUserAuthentication = async () => {
@@ -66,7 +68,7 @@ function AppContent() {
         // Detect auth method based on wallet ID
         let authMethod = 'wallet';
         if (wallet.id === 'inApp' || wallet.id === 'embedded') {
-          authMethod = 'inApp'; // User used email/social/phone but we can't tell which
+          authMethod = 'inApp';
         } else if (wallet.id === 'io.metamask') {
           authMethod = 'metamask';
         } else if (wallet.id === 'com.coinbase.wallet') {
@@ -153,6 +155,14 @@ function AppContent() {
       setIsProcessing(false);
     }
   }, [connectionStatus]);
+
+  const handleEnterPortal = () => {
+    setShowSplash(false);
+  };
+
+  if (showSplash) {
+    return <SplashPage onEnter={handleEnterPortal} />;
+  }
 
   return account ? <Dashboard client={client} /> : <LoginPage client={client} wallets={wallets} />;
 }
