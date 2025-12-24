@@ -8,7 +8,7 @@ export interface Env {
 }
 
 function corsHeaders(origin: string | null) {
-  const allowedOrigins = ['https://a11.fund', 'https://apia11.fund', 'http://localhost:5173', 'http://localhost:3000'];
+  const allowedOrigins = ['https://a11.fund', 'https://api.a11.fund', 'http://localhost:5173', 'http://localhost:3000'];
   const requestOrigin = origin || '';
   
   return {
