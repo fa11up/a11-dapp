@@ -82,7 +82,6 @@ frontend/
 ├── src/
 │   ├── components/
 │   │   ├── A11LogoBordered.tsx      # Primary logo component
-│   │   ├── A11LogoAngular.tsx       # Alternative logo design
 │   │   ├── SplashPage.tsx           # Landing/splash screen
 │   │   ├── LoginPage.tsx            # Authentication portal
 │   │   └── Dashboard.tsx            # Main user dashboard
@@ -170,16 +169,6 @@ npm run preview
 ```
 
 ## Customization
-
-### Changing Logos
-Toggle between logo designs in component imports:
-```tsx
-// Use bordered logo (default)
-import A11LogoBordered from './A11LogoBordered';
-
-// Or use angular logo
-import A11LogoAngular from './A11LogoAngular';
-```
 
 ### Adjusting Colors
 Modify Tailwind colors in the components by replacing:
