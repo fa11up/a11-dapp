@@ -13,10 +13,11 @@
     "worker:deploy": "wrangler deploy"
   },
   "dependencies": {
-    "thirdweb": "^5.72.0",
     "lucide-react": "^0.561.0",
     "react": "^19.2.3",
-    "react-dom": "^19.2.3"
+    "react-dom": "^19.2.3",
+    "recharts": "^3.6.0",
+    "thirdweb": "^5.72.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241218.0",
@@ -30,7 +31,7 @@
     "vite": "^7.3.0",
     "wrangler": "^4.54.0"
   },
-   "overrides": {
+  "overrides": {
     "ws": "^8.18.0",
     "elliptic": "^6.6.1",
     "cookie": "^0.7.2",

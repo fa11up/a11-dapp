@@ -1,5 +1,5 @@
 /**
- * Cloudflare Worker for D1 Database API - Simplified
+ * Cloudflare Worker for D1 Database API - With Portfolio Management
  */
 
 export interface Env {
@@ -50,6 +50,194 @@ export default {
           { headers }
         );
       }
+
+      // ============================================================================
+      // PORTFOLIO DASHBOARD ENDPOINTS
+      // ============================================================================
+
+      // 1. GET /api/fund/:id - Get fund metadata and statistics
+      if (url.pathname.match(/^\/api\/fund\/\d+$/) && request.method === 'GET') {
+        const fundId = url.pathname.split('/').pop();
+        
+        const fund = await env.DB.prepare(`
+          SELECT 
+            id,
+            fund_name,
+            total_aum,
+            total_shares_outstanding,
+            current_nav_per_share,
+            inception_date,
+            performance_mtd,
+            performance_ytd,
+            performance_inception,
+            sharpe_ratio,
+            max_drawdown,
+            volatility,
+            all_time_high_nav,
+            all_time_low_nav,
+            last_updated
+          FROM funds
+          WHERE id = ?
+        `).bind(fundId).first();
+
+        if (!fund) {
+          return new Response(
+            JSON.stringify({ error: 'Fund not found' }),
+            { status: 404, headers }
+          );
+        }
+
+        return new Response(JSON.stringify(fund), { headers });
+      }
+
+      // 2. GET /api/user-shares/:wallet - Get user's share holdings
+      if (url.pathname.match(/^\/api\/user-shares\/0x[a-fA-F0-9]{40}$/) && request.method === 'GET') {
+        const wallet = url.pathname.split('/').pop()?.toLowerCase();
+        
+        const userShares = await env.DB.prepare(`
+          SELECT 
+            id,
+            wallet_address,
+            fund_id,
+            total_shares,
+            cost_basis,
+            initial_investment_date
+          FROM user_shares
+          WHERE wallet_address = ?
+        `).bind(wallet).first();
+
+        if (!userShares) {
+          return new Response(
+            JSON.stringify({ error: 'User shares not found' }),
+            { status: 404, headers }
+          );
+        }
+
+        return new Response(JSON.stringify(userShares), { headers });
+      }
+
+      // 3. GET /api/fund-performance/:id - Get historical fund performance
+      if (url.pathname.match(/^\/api\/fund-performance\/\d+$/) && request.method === 'GET') {
+        const fundId = url.pathname.split('/').pop();
+        const days = url.searchParams.get('days') || '30';
+        
+        const performance = await env.DB.prepare(`
+          SELECT 
+            date,
+            nav_per_share,
+            total_aum,
+            daily_return
+          FROM fund_performance
+          WHERE fund_id = ?
+          ORDER BY date DESC
+          LIMIT ?
+        `).bind(fundId, parseInt(days)).all();
+
+        // Reverse to get chronological order
+        const results = performance.results ? performance.results.reverse() : [];
+        return new Response(JSON.stringify(results), { headers });
+      }
+
+      // 4. GET /api/portfolio-assets/:id - Get current portfolio holdings
+      if (url.pathname.match(/^\/api\/portfolio-assets\/\d+$/) && request.method === 'GET') {
+        const fundId = url.pathname.split('/').pop();
+        
+        const assets = await env.DB.prepare(`
+          SELECT 
+            id,
+            fund_id,
+            asset_symbol,
+            asset_name,
+            quantity,
+            current_price,
+            cost_basis,
+            current_value,
+            weight_percentage,
+            target_weight,
+            unrealized_pnl,
+            unrealized_pnl_percentage,
+            price_change_24h,
+            last_updated
+          FROM portfolio_assets
+          WHERE fund_id = ?
+          ORDER BY weight_percentage DESC
+        `).bind(fundId).all();
+
+        return new Response(JSON.stringify(assets.results || []), { headers });
+      }
+
+      // 5. GET /api/transactions/:wallet - Get user transaction history
+      if (url.pathname.match(/^\/api\/transactions\/0x[a-fA-F0-9]{40}$/) && request.method === 'GET') {
+        const wallet = url.pathname.split('/').pop()?.toLowerCase();
+        const limit = url.searchParams.get('limit') || '50';
+        
+        const transactions = await env.DB.prepare(`
+          SELECT 
+            id,
+            wallet_address,
+            fund_id,
+            transaction_type,
+            share_quantity,
+            share_price,
+            total_usd_value,
+            transaction_hash,
+            status,
+            created_at,
+            confirmed_at
+          FROM transactions
+          WHERE wallet_address = ?
+          ORDER BY created_at DESC
+          LIMIT ?
+        `).bind(wallet, parseInt(limit)).all();
+
+        return new Response(JSON.stringify(transactions.results || []), { headers });
+      }
+
+      // 6. GET /api/fund-activities/:id - Get fund manager activities
+      if (url.pathname.match(/^\/api\/fund-activities\/\d+$/) && request.method === 'GET') {
+        const fundId = url.pathname.split('/').pop();
+        const limit = url.searchParams.get('limit') || '20';
+        
+        const activities = await env.DB.prepare(`
+          SELECT 
+            id,
+            fund_id,
+            activity_type,
+            description,
+            amount,
+            asset_symbol,
+            created_at
+          FROM fund_activities
+          WHERE fund_id = ?
+          ORDER BY created_at DESC
+          LIMIT ?
+        `).bind(fundId, parseInt(limit)).all();
+
+        return new Response(JSON.stringify(activities.results || []), { headers });
+      }
+
+      // 7. GET /api/market-data - Get current market data
+      if (url.pathname === '/api/market-data' && request.method === 'GET') {
+        const marketData = await env.DB.prepare(`
+          SELECT 
+            id,
+            asset_symbol,
+            current_price,
+            price_change_24h,
+            price_change_7d,
+            volume_24h,
+            market_cap,
+            last_updated
+          FROM market_data
+          ORDER BY asset_symbol
+        `).all();
+
+        return new Response(JSON.stringify(marketData.results || []), { headers });
+      }
+
+      // ============================================================================
+      // USER MANAGEMENT ENDPOINTS
+      // ============================================================================
 
       // Get user by wallet address
       if (url.pathname.match(/^\/api\/user\/0x[a-fA-F0-9]{40}$/) && request.method === 'GET') {
