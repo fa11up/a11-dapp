@@ -1,11 +1,34 @@
 /**
  * Cloudflare Worker for D1 Database API - With Portfolio Management
+ * SECURITY HARDENED VERSION
  */
 
 export interface Env {
   DB: D1Database;
   ALLOWED_ORIGINS?: string;
+  API_KEY?: string; // Optional API key for enhanced security
+  RATE_LIMIT_REQUESTS?: string; // Max requests per minute (default: 100)
+  RATE_LIMIT_WINDOW?: string; // Time window in seconds (default: 60)
 }
+
+// Rate limiting storage
+interface RateLimitEntry {
+  count: number;
+  resetAt: number;
+}
+
+const rateLimitStore = new Map<string, RateLimitEntry>();
+
+// Security headers
+const SECURITY_HEADERS = {
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "X-XSS-Protection": "1; mode=block",
+  "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+  "Content-Security-Policy": "default-src 'self'",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+};
 
 interface SignupRequestBody {
   walletAddress: string;
@@ -49,6 +72,93 @@ interface CorsHeaders {
   "Access-Control-Allow-Headers": string;
 }
 
+// Input validation functions
+function isValidEthereumAddress(address: string): boolean {
+  return /^0x[a-fA-F0-9]{40}$/.test(address);
+}
+
+function isValidEmail(email: string): boolean {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email) && email.length <= 254;
+}
+
+function isValidPhoneNumber(phone: string): boolean {
+  // E.164 format: +[country code][number] (max 15 digits)
+  return /^\+?[1-9]\d{1,14}$/.test(phone);
+}
+
+function sanitizeString(input: string, maxLength: number = 255): string {
+  return input.trim().slice(0, maxLength);
+}
+
+function isValidPositiveInteger(value: string, max: number = 1000000): boolean {
+  const num = parseInt(value, 10);
+  return !isNaN(num) && num > 0 && num <= max && value === num.toString();
+}
+
+function isValidAuthMethod(method: string): boolean {
+  const validMethods = [
+    'metamask',
+    'coinbase-wallet',
+    'walletconnect',
+    'inApp',
+    'email',
+    'phone',
+    'google',
+    'github',
+    'microsoft',
+    'discord',
+    'x',
+    'passkey',
+    'guest',
+    'wallet'
+  ];
+  return validMethods.includes(method.toLowerCase());
+}
+
+// Rate limiting function
+function checkRateLimit(
+  identifier: string,
+  maxRequests: number,
+  windowSeconds: number
+): { allowed: boolean; resetAt?: number } {
+  const now = Date.now();
+  const entry = rateLimitStore.get(identifier);
+
+  if (!entry || now >= entry.resetAt) {
+    // New window or expired window
+    const resetAt = now + windowSeconds * 1000;
+    rateLimitStore.set(identifier, { count: 1, resetAt });
+    return { allowed: true, resetAt };
+  }
+
+  if (entry.count >= maxRequests) {
+    return { allowed: false, resetAt: entry.resetAt };
+  }
+
+  entry.count++;
+  return { allowed: true, resetAt: entry.resetAt };
+}
+
+// Clean up old rate limit entries periodically
+function cleanupRateLimitStore() {
+  const now = Date.now();
+  for (const [key, entry] of rateLimitStore.entries()) {
+    if (now >= entry.resetAt) {
+      rateLimitStore.delete(key);
+    }
+  }
+}
+
+// Get client identifier for rate limiting
+function getClientIdentifier(request: Request): string {
+  // Use CF-Connecting-IP header (Cloudflare specific)
+  const ip = request.headers.get('CF-Connecting-IP') ||
+             request.headers.get('X-Forwarded-For') ||
+             'unknown';
+  return ip.split(',')[0].trim();
+}
+
 function corsHeaders(origin: string | null): CorsHeaders {
   const allowedOrigins = [
     "https://a11.fund",
@@ -58,28 +168,91 @@ function corsHeaders(origin: string | null): CorsHeaders {
   ];
   const requestOrigin = origin || "";
 
+  // Only return the origin if it's in the whitelist, otherwise don't set CORS header
+  const allowOrigin = allowedOrigins.includes(requestOrigin)
+    ? requestOrigin
+    : "";
+
   return {
-    "Access-Control-Allow-Origin": allowedOrigins.includes(requestOrigin)
-      ? requestOrigin
-      : allowedOrigins[0],
+    "Access-Control-Allow-Origin": allowOrigin || allowedOrigins[0],
     "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, X-API-Key",
   };
+}
+
+// Maximum request body size (1MB)
+const MAX_BODY_SIZE = 1024 * 1024;
+
+// Validate and parse JSON body with size limit
+async function parseJsonBody<T>(request: Request): Promise<T | null> {
+  try {
+    const contentLength = request.headers.get('Content-Length');
+    if (contentLength && parseInt(contentLength) > MAX_BODY_SIZE) {
+      return null;
+    }
+
+    const text = await request.text();
+    if (text.length > MAX_BODY_SIZE) {
+      return null;
+    }
+
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
 }
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    // Periodic cleanup of rate limit store
+    if (Math.random() < 0.01) { // 1% chance per request
+      cleanupRateLimitStore();
+    }
+
     const url = new URL(request.url);
     const origin = request.headers.get("Origin");
     const headers = {
       "Content-Type": "application/json",
       ...corsHeaders(origin),
+      ...SECURITY_HEADERS,
     };
 
+    // Handle CORS preflight
     if (request.method === "OPTIONS") {
       return new Response(null, { headers });
     }
 
+    // Rate limiting
+    const clientId = getClientIdentifier(request);
+    const maxRequests = parseInt(env.RATE_LIMIT_REQUESTS || "100");
+    const windowSeconds = parseInt(env.RATE_LIMIT_WINDOW || "60");
+
+    const rateLimitResult = checkRateLimit(clientId, maxRequests, windowSeconds);
+
+    if (!rateLimitResult.allowed) {
+      const resetInSeconds = rateLimitResult.resetAt
+        ? Math.ceil((rateLimitResult.resetAt - Date.now()) / 1000)
+        : windowSeconds;
+
+      return new Response(
+        JSON.stringify({
+          error: "Rate limit exceeded",
+          message: `Too many requests. Please try again in ${resetInSeconds} seconds.`,
+        }),
+        {
+          status: 429,
+          headers: {
+            ...headers,
+            "Retry-After": resetInSeconds.toString(),
+            "X-RateLimit-Limit": maxRequests.toString(),
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": rateLimitResult.resetAt?.toString() || "",
+          },
+        }
+      );
+    }
+
+    // Database check
     if (!env.DB) {
       console.error(
         "D1 database binding not found. Check wrangler.toml configuration."
@@ -87,8 +260,6 @@ export default {
       return new Response(
         JSON.stringify({
           error: "Database not configured",
-          details:
-            "D1 database binding is missing. Please check wrangler.toml configuration.",
         }),
         { status: 500, headers }
       );
@@ -113,6 +284,14 @@ export default {
         request.method === "GET"
       ) {
         const fundId = url.pathname.split("/").pop();
+
+        // Validate fundId is a positive integer
+        if (!fundId || !isValidPositiveInteger(fundId, 999999)) {
+          return new Response(
+            JSON.stringify({ error: "Invalid fund ID" }),
+            { status: 400, headers }
+          );
+        }
 
         const fund = await env.DB.prepare(
           `
@@ -155,6 +334,14 @@ export default {
         request.method === "GET"
       ) {
         const wallet = url.pathname.split("/").pop()?.toLowerCase();
+
+        // Validate wallet address
+        if (!wallet || !isValidEthereumAddress(wallet)) {
+          return new Response(
+            JSON.stringify({ error: "Invalid wallet address" }),
+            { status: 400, headers }
+          );
+        }
 
         let userShares = await env.DB.prepare(
           `
@@ -206,11 +393,29 @@ export default {
         request.method === "GET"
       ) {
         const fundId = url.pathname.split("/").pop();
-        const days = url.searchParams.get("days") || "30";
+        const daysParam = url.searchParams.get("days") || "30";
+
+        // Validate fundId is a positive integer
+        if (!fundId || !isValidPositiveInteger(fundId, 999999)) {
+          return new Response(
+            JSON.stringify({ error: "Invalid fund ID" }),
+            { status: 400, headers }
+          );
+        }
+
+        // Validate days parameter (limit to reasonable range)
+        if (!isValidPositiveInteger(daysParam, 3650)) { // Max 10 years
+          return new Response(
+            JSON.stringify({ error: "Invalid days parameter" }),
+            { status: 400, headers }
+          );
+        }
+
+        const days = parseInt(daysParam, 10);
 
         const performance = await env.DB.prepare(
           `
-            SELECT 
+            SELECT
               date,
               nav_per_share,
               total_aum,
@@ -221,7 +426,7 @@ export default {
             LIMIT ?
           `
         )
-          .bind(fundId, parseInt(days))
+          .bind(fundId, days)
           .all();
 
         // Reverse to get chronological order
@@ -237,6 +442,14 @@ export default {
         request.method === "GET"
       ) {
         const fundId = url.pathname.split("/").pop();
+
+        // Validate fundId
+        if (!fundId || !isValidPositiveInteger(fundId, 999999)) {
+          return new Response(
+            JSON.stringify({ error: "Invalid fund ID" }),
+            { status: 400, headers }
+          );
+        }
 
         const assets = await env.DB.prepare(
           `
@@ -272,11 +485,29 @@ export default {
         request.method === "GET"
       ) {
         const wallet = url.pathname.split("/").pop()?.toLowerCase();
-        const limit = url.searchParams.get("limit") || "50";
+        const limitParam = url.searchParams.get("limit") || "50";
+
+        // Validate wallet address
+        if (!wallet || !isValidEthereumAddress(wallet)) {
+          return new Response(
+            JSON.stringify({ error: "Invalid wallet address" }),
+            { status: 400, headers }
+          );
+        }
+
+        // Validate limit parameter
+        if (!isValidPositiveInteger(limitParam, 1000)) { // Max 1000 records
+          return new Response(
+            JSON.stringify({ error: "Invalid limit parameter" }),
+            { status: 400, headers }
+          );
+        }
+
+        const limit = parseInt(limitParam, 10);
 
         let transactions = await env.DB.prepare(
           `
-            SELECT 
+            SELECT
               id,
               wallet_address,
               fund_id,
@@ -294,7 +525,7 @@ export default {
             LIMIT ?
           `
         )
-          .bind(wallet, parseInt(limit))
+          .bind(wallet, limit)
           .all();
 
         // If no transactions found for user, return first user's transactions as fallback
@@ -333,11 +564,29 @@ export default {
         request.method === "GET"
       ) {
         const fundId = url.pathname.split("/").pop();
-        const limit = url.searchParams.get("limit") || "20";
+        const limitParam = url.searchParams.get("limit") || "20";
+
+        // Validate fundId
+        if (!fundId || !isValidPositiveInteger(fundId, 999999)) {
+          return new Response(
+            JSON.stringify({ error: "Invalid fund ID" }),
+            { status: 400, headers }
+          );
+        }
+
+        // Validate limit parameter
+        if (!isValidPositiveInteger(limitParam, 1000)) { // Max 1000 records
+          return new Response(
+            JSON.stringify({ error: "Invalid limit parameter" }),
+            { status: 400, headers }
+          );
+        }
+
+        const limit = parseInt(limitParam, 10);
 
         const activities = await env.DB.prepare(
           `
-          SELECT 
+          SELECT
             id,
             fund_id,
             activity_type,
@@ -351,7 +600,7 @@ export default {
           LIMIT ?
         `
         )
-          .bind(fundId, parseInt(limit))
+          .bind(fundId, limit)
           .all();
 
         return new Response(JSON.stringify(activities.results || []), {
@@ -393,6 +642,14 @@ export default {
       ) {
         const address = url.pathname.split("/").pop()?.toLowerCase();
 
+        // Validate wallet address
+        if (!address || !isValidEthereumAddress(address)) {
+          return new Response(
+            JSON.stringify({ error: "Invalid wallet address" }),
+            { status: 400, headers }
+          );
+        }
+
         const result = await env.DB.prepare(
           "SELECT * FROM users WHERE wallet_address = ?"
         )
@@ -409,27 +666,9 @@ export default {
         return new Response(JSON.stringify(result), { headers });
       }
 
-      // Check if user exists by email
-      if (
-        url.pathname.match(/^\/api\/user\/check\/email\/.+$/) &&
-        request.method === "GET"
-      ) {
-        const email = url.pathname.split("/").pop()?.toLowerCase();
-
-        const result = await env.DB.prepare(
-          "SELECT wallet_address FROM users WHERE email = ?"
-        )
-          .bind(email)
-          .first();
-
-        return new Response(
-          JSON.stringify({
-            exists: !!result,
-            walletAddress: result ? result.wallet_address : null,
-          }),
-          { headers }
-        );
-      }
+      // REMOVED: Email enumeration endpoint for security reasons
+      // This endpoint allowed attackers to enumerate valid emails in the system
+      // If you need to check for existing users, use wallet address lookup instead
 
       // Create new user (Sign Up)
       if (
@@ -437,7 +676,15 @@ export default {
           url.pathname === "/api/signup") &&
         request.method === "POST"
       ) {
-        const body = (await request.json()) as SignupRequestBody;
+        const body = await parseJsonBody<SignupRequestBody>(request);
+
+        if (!body) {
+          return new Response(
+            JSON.stringify({ error: "Invalid request body or body too large" }),
+            { status: 400, headers }
+          );
+        }
+
         const {
           walletAddress,
           email,
@@ -447,11 +694,44 @@ export default {
           profileImage,
         } = body;
 
+        // Validate required fields
         if (!walletAddress || !authMethod) {
           return new Response(
             JSON.stringify({
               error: "Wallet address and auth method are required",
             }),
+            { status: 400, headers }
+          );
+        }
+
+        // Validate wallet address format
+        if (!isValidEthereumAddress(walletAddress)) {
+          return new Response(
+            JSON.stringify({ error: "Invalid wallet address format" }),
+            { status: 400, headers }
+          );
+        }
+
+        // Validate auth method
+        if (!isValidAuthMethod(authMethod)) {
+          return new Response(
+            JSON.stringify({ error: "Invalid authentication method" }),
+            { status: 400, headers }
+          );
+        }
+
+        // Validate email if provided
+        if (email && email !== "" && !isValidEmail(email)) {
+          return new Response(
+            JSON.stringify({ error: "Invalid email format" }),
+            { status: 400, headers }
+          );
+        }
+
+        // Validate phone number if provided
+        if (phoneNumber && phoneNumber !== "" && !isValidPhoneNumber(phoneNumber)) {
+          return new Response(
+            JSON.stringify({ error: "Invalid phone number format" }),
             { status: 400, headers }
           );
         }
@@ -473,13 +753,14 @@ export default {
           );
         }
 
-        const emailValue = email && email !== "" ? email.toLowerCase() : null;
+        // Sanitize and validate inputs
+        const emailValue = email && email !== "" ? sanitizeString(email.toLowerCase(), 254) : null;
         const phoneValue =
-          phoneNumber && phoneNumber !== "" ? phoneNumber : null;
+          phoneNumber && phoneNumber !== "" ? sanitizeString(phoneNumber, 20) : null;
         const displayNameValue =
-          displayName && displayName !== "" ? displayName : "Web3 User";
+          displayName && displayName !== "" ? sanitizeString(displayName, 100) : "Web3 User";
         const profileImageValue =
-          profileImage && profileImage !== "" ? profileImage : null;
+          profileImage && profileImage !== "" ? sanitizeString(profileImage, 500) : null;
 
         const result = await env.DB.prepare(
           `INSERT INTO users (
@@ -510,7 +791,15 @@ export default {
 
       // Update user on login
       if (url.pathname === "/api/user/login" && request.method === "POST") {
-        const body = (await request.json()) as LoginRequestBody;
+        const body = await parseJsonBody<LoginRequestBody>(request);
+
+        if (!body) {
+          return new Response(
+            JSON.stringify({ error: "Invalid request body or body too large" }),
+            { status: 400, headers }
+          );
+        }
+
         const {
           walletAddress,
           authMethod,
@@ -527,6 +816,36 @@ export default {
           );
         }
 
+        // Validate wallet address format
+        if (!isValidEthereumAddress(walletAddress)) {
+          return new Response(
+            JSON.stringify({ error: "Invalid wallet address format" }),
+            { status: 400, headers }
+          );
+        }
+
+        // Validate optional fields
+        if (email && email !== "" && !isValidEmail(email)) {
+          return new Response(
+            JSON.stringify({ error: "Invalid email format" }),
+            { status: 400, headers }
+          );
+        }
+
+        if (phoneNumber && phoneNumber !== "" && !isValidPhoneNumber(phoneNumber)) {
+          return new Response(
+            JSON.stringify({ error: "Invalid phone number format" }),
+            { status: 400, headers }
+          );
+        }
+
+        if (authMethod && authMethod !== "" && !isValidAuthMethod(authMethod)) {
+          return new Response(
+            JSON.stringify({ error: "Invalid authentication method" }),
+            { status: 400, headers }
+          );
+        }
+
         const updates = [
           "last_login_at = datetime('now')",
           "login_count = login_count + 1",
@@ -535,23 +854,23 @@ export default {
 
         if (authMethod && authMethod !== "") {
           updates.push("auth_method = ?");
-          values.push(authMethod);
+          values.push(sanitizeString(authMethod, 50));
         }
         if (email && email !== "") {
           updates.push("email = ?");
-          values.push(email.toLowerCase());
+          values.push(sanitizeString(email.toLowerCase(), 254));
         }
         if (phoneNumber && phoneNumber !== "") {
           updates.push("phone_number = ?");
-          values.push(phoneNumber);
+          values.push(sanitizeString(phoneNumber, 20));
         }
         if (displayName && displayName !== "" && displayName !== "Web3 User") {
           updates.push("display_name = ?");
-          values.push(displayName);
+          values.push(sanitizeString(displayName, 100));
         }
         if (profileImage && profileImage !== "") {
           updates.push("profile_image = ?");
-          values.push(profileImage);
+          values.push(sanitizeString(profileImage, 500));
         }
 
         updates.push("updated_at = datetime('now')");
@@ -583,9 +902,39 @@ export default {
 
       // Create or update user
       if (url.pathname === "/api/user" && request.method === "POST") {
-        const body = (await request.json()) as UserRequestBody;
-        const { walletAddress, email, displayName, authMethod, profileImage } =
-          body;
+        const body = await parseJsonBody<UserRequestBody>(request);
+
+        if (!body) {
+          return new Response(
+            JSON.stringify({ error: "Invalid request body or body too large" }),
+            { status: 400, headers }
+          );
+        }
+
+        const { walletAddress, email, displayName, authMethod, profileImage } = body;
+
+        // Validate wallet address
+        if (!walletAddress || !isValidEthereumAddress(walletAddress)) {
+          return new Response(
+            JSON.stringify({ error: "Invalid wallet address format" }),
+            { status: 400, headers }
+          );
+        }
+
+        // Validate optional fields
+        if (email && email !== "" && !isValidEmail(email)) {
+          return new Response(
+            JSON.stringify({ error: "Invalid email format" }),
+            { status: 400, headers }
+          );
+        }
+
+        if (authMethod && authMethod !== "" && !isValidAuthMethod(authMethod)) {
+          return new Response(
+            JSON.stringify({ error: "Invalid authentication method" }),
+            { status: 400, headers }
+          );
+        }
 
         const existingUser = await env.DB.prepare(
           "SELECT * FROM users WHERE wallet_address = ?"
@@ -593,13 +942,14 @@ export default {
           .bind(walletAddress.toLowerCase())
           .first();
 
-        const emailValue = email && email !== "" ? email.toLowerCase() : null;
+        // Sanitize inputs
+        const emailValue = email && email !== "" ? sanitizeString(email.toLowerCase(), 254) : null;
         const displayNameValue =
-          displayName && displayName !== "" ? displayName : null;
+          displayName && displayName !== "" ? sanitizeString(displayName, 100) : null;
         const authMethodValue =
-          authMethod && authMethod !== "" ? authMethod : null;
+          authMethod && authMethod !== "" ? sanitizeString(authMethod, 50) : null;
         const profileImageValue =
-          profileImage && profileImage !== "" ? profileImage : null;
+          profileImage && profileImage !== "" ? sanitizeString(profileImage, 500) : null;
 
         let result;
         if (existingUser) {
@@ -646,15 +996,41 @@ export default {
         request.method === "PATCH"
       ) {
         const address = url.pathname.split("/")[3].toLowerCase();
-        const body = (await request.json()) as UpdateNameRequestBody;
+
+        // Validate wallet address
+        if (!isValidEthereumAddress(address)) {
+          return new Response(
+            JSON.stringify({ error: "Invalid wallet address format" }),
+            { status: 400, headers }
+          );
+        }
+
+        const body = await parseJsonBody<UpdateNameRequestBody>(request);
+
+        if (!body) {
+          return new Response(
+            JSON.stringify({ error: "Invalid request body or body too large" }),
+            { status: 400, headers }
+          );
+        }
+
         const { displayName } = body;
+
+        if (!displayName || displayName.trim() === "") {
+          return new Response(
+            JSON.stringify({ error: "Display name is required" }),
+            { status: 400, headers }
+          );
+        }
+
+        const sanitizedName = sanitizeString(displayName, 100);
 
         const result = await env.DB.prepare(
           `UPDATE users SET display_name = ?, updated_at = datetime('now')
            WHERE wallet_address = ?
            RETURNING *`
         )
-          .bind(displayName, address)
+          .bind(sanitizedName, address)
           .first();
 
         if (!result) {
@@ -673,24 +1049,49 @@ export default {
         request.method === "PATCH"
       ) {
         const address = url.pathname.split("/")[3].toLowerCase();
-        const body = (await request.json()) as UpdateProfileRequestBody;
+
+        // Validate wallet address
+        if (!isValidEthereumAddress(address)) {
+          return new Response(
+            JSON.stringify({ error: "Invalid wallet address format" }),
+            { status: 400, headers }
+          );
+        }
+
+        const body = await parseJsonBody<UpdateProfileRequestBody>(request);
+
+        if (!body) {
+          return new Response(
+            JSON.stringify({ error: "Invalid request body or body too large" }),
+            { status: 400, headers }
+          );
+        }
+
         const { email, displayName, profileImage } = body;
+
+        // Validate email if provided
+        if (email && email !== "" && !isValidEmail(email)) {
+          return new Response(
+            JSON.stringify({ error: "Invalid email format" }),
+            { status: 400, headers }
+          );
+        }
 
         const updates = [];
         const values = [];
 
         if (email !== undefined) {
           updates.push("email = ?");
-          values.push(email && email !== "" ? email.toLowerCase() : null);
+          values.push(email && email !== "" ? sanitizeString(email.toLowerCase(), 254) : null);
         }
         if (displayName !== undefined) {
           updates.push("display_name = ?");
-          values.push(displayName && displayName !== "" ? displayName : null);
+          values.push(displayName && displayName !== "" ? sanitizeString(displayName, 100) : null);
         }
         if (profileImage !== undefined) {
           updates.push("profile_image = ?");
           values.push(
-            profileImage && profileImage !== "" ? profileImage : null
+            profileImage && profileImage !== "" ? sanitizeString(profileImage, 500) : null
           );
         }
 
@@ -738,6 +1139,14 @@ export default {
       ) {
         const address = url.pathname.split("/").pop()?.toLowerCase();
 
+        // Validate wallet address
+        if (!address || !isValidEthereumAddress(address)) {
+          return new Response(
+            JSON.stringify({ error: "Invalid wallet address format" }),
+            { status: 400, headers }
+          );
+        }
+
         const result = await env.DB.prepare(
           "DELETE FROM users WHERE wallet_address = ? RETURNING *"
         )
@@ -765,14 +1174,14 @@ export default {
         headers,
       });
     } catch (error: unknown) {
+      // Log error for debugging but don't expose details to client
       console.error("Error:", error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      const errorStack = error instanceof Error ? error.stack : undefined;
+
+      // Return generic error message without stack trace
       return new Response(
         JSON.stringify({
           error: "Internal server error",
-          details: errorMessage,
-          stack: errorStack,
+          message: "An unexpected error occurred. Please try again later.",
         }),
         { status: 500, headers }
       );
