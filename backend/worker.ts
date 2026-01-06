@@ -7,7 +7,49 @@ export interface Env {
   ALLOWED_ORIGINS?: string;
 }
 
-function corsHeaders(origin: string | null) {
+interface SignupRequestBody {
+  walletAddress: string;
+  email?: string | null;
+  phoneNumber?: string | null;
+  displayName?: string | null;
+  authMethod: string;
+  profileImage?: string | null;
+}
+
+interface LoginRequestBody {
+  walletAddress: string;
+  authMethod?: string;
+  email?: string;
+  phoneNumber?: string;
+  displayName?: string;
+  profileImage?: string;
+}
+
+interface UserRequestBody {
+  walletAddress: string;
+  email?: string;
+  displayName?: string;
+  authMethod?: string;
+  profileImage?: string;
+}
+
+interface UpdateNameRequestBody {
+  displayName: string;
+}
+
+interface UpdateProfileRequestBody {
+  email?: string;
+  displayName?: string;
+  profileImage?: string;
+}
+
+interface CorsHeaders {
+  "Access-Control-Allow-Origin": string;
+  "Access-Control-Allow-Methods": string;
+  "Access-Control-Allow-Headers": string;
+}
+
+function corsHeaders(origin: string | null): CorsHeaders {
   const allowedOrigins = [
     "https://a11.fund",
     "https://api.a11.fund",
@@ -395,7 +437,7 @@ export default {
           url.pathname === "/api/signup") &&
         request.method === "POST"
       ) {
-        const body = (await request.json()) as any;
+        const body = (await request.json()) as SignupRequestBody;
         const {
           walletAddress,
           email,
@@ -468,7 +510,7 @@ export default {
 
       // Update user on login
       if (url.pathname === "/api/user/login" && request.method === "POST") {
-        const body = (await request.json()) as any;
+        const body = (await request.json()) as LoginRequestBody;
         const {
           walletAddress,
           authMethod,
@@ -541,7 +583,7 @@ export default {
 
       // Create or update user
       if (url.pathname === "/api/user" && request.method === "POST") {
-        const body = (await request.json()) as any;
+        const body = (await request.json()) as UserRequestBody;
         const { walletAddress, email, displayName, authMethod, profileImage } =
           body;
 
@@ -604,7 +646,7 @@ export default {
         request.method === "PATCH"
       ) {
         const address = url.pathname.split("/")[3].toLowerCase();
-        const body = (await request.json()) as any;
+        const body = (await request.json()) as UpdateNameRequestBody;
         const { displayName } = body;
 
         const result = await env.DB.prepare(
@@ -631,7 +673,7 @@ export default {
         request.method === "PATCH"
       ) {
         const address = url.pathname.split("/")[3].toLowerCase();
-        const body = (await request.json()) as any;
+        const body = (await request.json()) as UpdateProfileRequestBody;
         const { email, displayName, profileImage } = body;
 
         const updates = [];
@@ -722,13 +764,15 @@ export default {
         status: 404,
         headers,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
       return new Response(
         JSON.stringify({
           error: "Internal server error",
-          details: error?.message || String(error),
-          stack: error?.stack,
+          details: errorMessage,
+          stack: errorStack,
         }),
         { status: 500, headers }
       );
