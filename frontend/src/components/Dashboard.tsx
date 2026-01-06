@@ -42,6 +42,92 @@ interface DashboardProps {
   fundId?: number;
 }
 
+interface FundData {
+  id: number;
+  fund_name: string;
+  total_aum: number;
+  total_shares_outstanding: number;
+  current_nav_per_share: number;
+  inception_date: string;
+  performance_mtd: number;
+  performance_ytd: number;
+  performance_inception: number;
+  sharpe_ratio: number;
+  max_drawdown: number;
+  volatility: number;
+  all_time_high_nav: number;
+  all_time_low_nav: number;
+  last_updated: string;
+}
+
+interface UserShareData {
+  id: number;
+  wallet_address: string;
+  fund_id: number;
+  total_shares: number;
+  cost_basis: number;
+  initial_investment_date: string;
+}
+
+interface PerformanceData {
+  date: string;
+  nav_per_share: number;
+  total_aum: number;
+  daily_return: number;
+}
+
+interface PortfolioAsset {
+  id: number;
+  fund_id: number;
+  asset_symbol: string;
+  asset_name: string;
+  quantity: number;
+  current_price: number;
+  cost_basis: number;
+  current_value: number;
+  weight_percentage: number;
+  target_weight: number;
+  unrealized_pnl: number;
+  unrealized_pnl_percentage: number;
+  price_change_24h: number;
+  last_updated: string;
+}
+
+interface Transaction {
+  id: number;
+  wallet_address: string;
+  fund_id: number;
+  transaction_type: string;
+  share_quantity: number;
+  share_price: number;
+  total_usd_value: number;
+  transaction_hash: string | null;
+  status: string;
+  created_at: string;
+  confirmed_at: string | null;
+}
+
+interface FundActivity {
+  id: number;
+  fund_id: number;
+  activity_type: string;
+  description: string;
+  amount: number | null;
+  asset_symbol: string | null;
+  created_at: string;
+}
+
+interface MarketData {
+  id: number;
+  asset_symbol: string;
+  current_price: number;
+  price_change_24h: number;
+  price_change_7d: number;
+  volume_24h: number | null;
+  market_cap: number | null;
+  last_updated: string;
+}
+
 const COLORS = ["#f59e0b", "#3b82f6", "#10b981"];
 const API_URL = (
   import.meta.env.VITE_API_URL || "http://localhost:3001"
@@ -60,13 +146,13 @@ const Dashboard: React.FC<DashboardProps> = ({  fundId = 1 }) => {
   const [redeemAmount, setRedeemAmount] = useState<string>("");
 
   // Data State
-  const [fundData, setFundData] = useState<any>(null);
-  const [userData, setUserData] = useState<any>(null);
-  const [performanceData, setPerformanceData] = useState<any[]>([]);
-  const [portfolioData, setPortfolioData] = useState<any[]>([]);
-  const [transactions, setTransactions] = useState<any[]>([]);
-  const [activities, setActivities] = useState<any[]>([]);
-  const [marketData, setMarketData] = useState<any[]>([]);
+  const [fundData, setFundData] = useState<FundData | null>(null);
+  const [userData, setUserData] = useState<UserShareData | null>(null);
+  const [performanceData, setPerformanceData] = useState<PerformanceData[]>([]);
+  const [portfolioData, setPortfolioData] = useState<PortfolioAsset[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [activities, setActivities] = useState<FundActivity[]>([]);
+  const [marketData, setMarketData] = useState<MarketData[]>([]);
 
   // Loading & Error State
   const [loading, setLoading] = useState<boolean>(true);

@@ -41,7 +41,7 @@ const wallets = [
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3001').replace(/\/$/, '');
 
-function AppContent() {
+function AppContent(): JSX.Element {
   const account = useActiveAccount();
   const wallet = useActiveWallet();
   const connectionStatus = useActiveWalletConnectionStatus();
@@ -156,7 +156,7 @@ function AppContent() {
     }
   }, [connectionStatus]);
 
-  const handleEnterPortal = () => {
+  const handleEnterPortal = (): void => {
     setShowSplash(false);
   };
 
@@ -167,7 +167,7 @@ function AppContent() {
   return account ? <Dashboard client={client} /> : <LoginPage client={client} wallets={wallets} />;
 }
 
-function App() {
+function App(): JSX.Element {
   return (
     <ThirdwebProvider>
       <AppContent />
