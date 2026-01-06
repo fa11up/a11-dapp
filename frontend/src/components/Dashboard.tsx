@@ -526,7 +526,7 @@ const Dashboard: React.FC<DashboardProps> = ({  fundId = 1 }) => {
                       paddingAngle={2}
                       dataKey="value"
                     >
-                      {portfolioData.map((index) => (
+                      {portfolioData.map((_, index) => (
                         <Cell
                           key={`cell-${index}`}
                           fill={COLORS[index % COLORS.length]}
