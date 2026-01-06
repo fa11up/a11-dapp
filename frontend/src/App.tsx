@@ -1,4 +1,5 @@
-import { 
+import React, { useEffect, useState } from 'react';
+import {
   ThirdwebProvider,
   useActiveAccount,
   useActiveWallet,
@@ -6,7 +7,6 @@ import {
 } from "thirdweb/react";
 import { createThirdwebClient } from "thirdweb";
 import { inAppWallet, createWallet } from "thirdweb/wallets";
-import { useEffect, useState } from 'react';
 
 import SplashPage from './components/SplashPage';
 import LoginPage from './components/LoginPage';
