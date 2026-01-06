@@ -41,7 +41,7 @@ const wallets = [
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3001').replace(/\/$/, '');
 
-function AppContent(): JSX.Element {
+function AppContent(): React.ReactElement {
   const account = useActiveAccount();
   const wallet = useActiveWallet();
   const connectionStatus = useActiveWalletConnectionStatus();
@@ -167,7 +167,7 @@ function AppContent(): JSX.Element {
   return account ? <Dashboard client={client} /> : <LoginPage client={client} wallets={wallets} />;
 }
 
-function App(): JSX.Element {
+function App(): React.ReactElement {
   return (
     <ThirdwebProvider>
       <AppContent />
